@@ -6,6 +6,15 @@ Import a project built by Claude, ChatGPT, Cursor, Lovable, Bolt, Replit, v0, or
 
 > 🔒 **Local-first MVP:** analysis runs entirely in your browser. Your source code is never uploaded, never executed, and stored only in your browser's IndexedDB. No account, no database, and **no AI API key is required** — lessons are generated deterministically from real file evidence. Secret-looking files are redacted and never shown with values.
 
+## Run it online (GitHub Pages)
+
+**Live app: https://pharveylg.github.io/reverselearn/**
+
+Every push to `main` runs the tests and redeploys this automatically
+(`.github/workflows/deploy-pages.yml`). It is the same local-first app —
+analysis still happens only in the visitor's browser; GitHub Pages just
+serves the static files, and projects are stored in that browser only.
+
 ## Quick start
 
 ```bash

@@ -32,3 +32,7 @@ USING IT
 STOPPING IT
   Close the black launcher window. To restart, double-click it again.
   Your projects are saved in your browser between runs.
+
+INFOSEC NOTE
+  The app listens ONLY on 127.0.0.1 (this computer). It is not reachable
+  from other computers on your Wi-Fi/office network. Details: docs/SECURITY.md

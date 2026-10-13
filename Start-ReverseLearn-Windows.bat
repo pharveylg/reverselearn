@@ -25,5 +25,5 @@ echo  Starting ReverseLearn at http://localhost:3000
 echo  Keep this window open. To stop the app, close this window.
 echo.
 start "" /min cmd /c "timeout /t 5 >nul & start http://localhost:3000"
-call npm run start -- -p 3000
+call npm run start -- -p 3000 -H 127.0.0.1 -H 127.0.0.1
 pause

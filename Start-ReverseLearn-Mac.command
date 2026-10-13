@@ -13,4 +13,4 @@ if [ ! -d node_modules ]; then echo "First run only: installing (a few minutes).
 if [ ! -f .next/BUILD_ID ]; then echo "First run only: preparing the app..."; npm run build; fi
 echo "Starting at http://localhost:3000  (close this window to stop)"
 ( sleep 5; open "http://localhost:3000" ) &
-npm run start -- -p 3000
+npm run start -- -p 3000 -H 127.0.0.1

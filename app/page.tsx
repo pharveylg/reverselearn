@@ -30,7 +30,7 @@ function download(name: string, text: string, type = 'text/plain') {
 }
 
 
-function ArchDiagram({ analysis, onOpen }: { analysis: Analysis; onOpen: (p: string) => void }) {
+function ArchDiagram({ analysis, onOpen, onSelect, selectedId }: { analysis: Analysis; onOpen: (p: string) => void; onSelect?: (n: Analysis['nodes'][0]) => void; selectedId?: string }) {
   const [scale, setScale] = useState(1); const [off, setOff] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const order = ['UI', 'API', 'Auth', 'Database', 'External', 'Files'];
@@ -51,8 +51,8 @@ function ArchDiagram({ analysis, onOpen }: { analysis: Analysis; onOpen: (p: str
         <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9db0c1" /></marker></defs>
         <g transform={`translate(${off.x},${off.y}) scale(${scale})`}>
           {analysis.edges.map((e, i) => { const a = center(e.from), b = center(e.to); return (<g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#9db0c1" strokeWidth="1.8" markerEnd="url(#arr)" /><text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} fontSize="10" textAnchor="middle" className="mut">{e.label.slice(0, 34)}</text></g>); })}
-          {[...pos.values()].map(({ x, y, n }) => (<g key={n.id} onClick={() => { const p = n.evidence[0]?.path; if (p) onOpen(p); }} style={{ cursor: 'pointer' }}>
-            <rect x={x} y={y} width="192" height="84" rx="13" fill="#1d2631" stroke={n.confidence === 'observed' ? '#2dd4a8' : n.confidence === 'inferred' ? '#ffb84d' : '#ff7a7a'} strokeWidth="2" />
+          {[...pos.values()].map(({ x, y, n }) => (<g key={n.id} onClick={() => { if (onSelect) onSelect(n); else { const p = n.evidence[0]?.path; if (p) onOpen(p); } }} style={{ cursor: 'pointer' }}>
+            <rect x={x} y={y} width="192" height="84" rx="13" fill={selectedId === n.id ? '#25415e' : '#1d2631'} stroke={n.confidence === 'observed' ? '#2dd4a8' : n.confidence === 'inferred' ? '#ffb84d' : '#ff7a7a'} strokeWidth={selectedId === n.id ? 4 : 2} />
             <text x={x + 96} y={y + 25} fontSize="13" fontWeight="800" textAnchor="middle">{n.type === 'UI' ? '🖥️ ' : n.type === 'API' ? '⚙️ ' : n.type === 'Database' ? '🗄️ ' : n.type === 'Auth' ? '🔐 ' : '🔹 '}{n.label.slice(0, 24)}</text>
             {wrap(n.detail).map((l, i) => <text key={i} x={x + 96} y={y + 46 + i * 14} fontSize="10.5" textAnchor="middle" className="mut">{l}</text>)}
             <text x={x + 96} y={y + 78} fontSize="9.5" textAnchor="middle" className="mut">{n.confidence}</text></g>))}
@@ -92,6 +92,10 @@ export default function Home() {
   const [quizPicked, setQuizPicked] = useState<number | null>(null);
   const [hintIdx, setHintIdx] = useState<Record<string, number>>({});
   const [funcSymbol, setFuncSymbol] = useState('');
+  const [devView, setDevView] = useState(true);
+  const [tipIdx, setTipIdx] = useState(0);
+  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [liveUrl, setLiveUrl] = useState('');
   const [changeReq, setChangeReq] = useState(''); const [changeFile, setChangeFile] = useState('');
   const [edited, setEdited] = useState(''); const [diff, setDiff] = useState(''); const [approved, setApproved] = useState(false);
   const [compare, setCompare] = useState<{ added: string[]; removed: string[]; modified: string[] } | null>(null);
@@ -177,12 +181,30 @@ export default function Home() {
         <div className="logo">Reverse<span>Learn</span></div>
         <p className="tag">Understand apps AI built for you — from real evidence in your code, not guesses. 🔒 Analysis runs in your browser; your source is not uploaded.</p>
         <nav className="nav" aria-label="Main">{NAV.map((n) => <button key={n.id} className={view === n.id ? 'on' : ''} onClick={() => setView(n.id)}>{n.label}</button>)}</nav>
+        <button className="btn" style={{ width: '100%', marginTop: 14 }} onClick={() => setDevView(!devView)} aria-pressed={devView}>{devView ? '🎓 Dev View: ON' : '🎓 Dev View: OFF'}</button>
+        <p className="tag">Dev View shows learning tidbits on every screen while you explore. Use it beside your real, deployed app.</p>
         <p className="tag" style={{ marginTop: 16 }}>No AI key configured — deterministic lessons from file evidence. See <code>.env.example</code> to enable an AI adapter later.</p>
       </aside>
 
       <main className="main">
         {error && <div className="card" role="alert" style={{ borderColor: 'var(--bad)' }}>⚠️ {error}</div>}
         {busy && <div className="card" aria-live="polite">⏳ {busy}</div>}
+        {devView && current && analysis && (() => {
+          const fileTechs = selectedFile ? detectTechInFiles(current.files.filter((f) => f.path === selectedFile), level) : [];
+          const tips: Record<string, string[]> = {
+            dashboard: ['Every project card is real analysis output — stack, file count and warnings come from the import, not a template.', 'Start from the diagram, not from random files: Overview first, then one feature.'],
+            import: ['A GitHub /tree/branch/folder link imports just that folder — perfect for monorepos.', 'Whatever you import is never executed and never leaves this browser.'],
+            overview: ['Click any box in the architecture diagram: a panel below explains the tech behind it, with a Learn more button.', 'Green border = observed in code. Red = unverified — treat it as a question, not a fact.'],
+            explorer: [fileTechs[0] ? `This file uses ${fileTechs[0].name}: ${fileTechs[0].plain}` : 'Follow the imports at the top of a file — that is the wiring diagram of the app.', 'Line numbers in findings are clickable evidence, not decoration.'],
+            trace: ['In the sequence diagram, blue is a request, green dashed is the reply, red ❓ means "not found in code".', 'Click a numbered message to open the exact file that performs it.'],
+            path: ['Red "!" stops are diagram boxes missing from code — verifying a gap is real learning.', 'Progress here is self-assessed. The explain-it-back exercise is the real test.'],
+            lesson: ['Use "Explain differently / go deeper" after reading, not before — predicting first makes it stick.', fileTechs[0] ? `Tech in the selected file: ${fileTechs.map((t) => t.name).slice(0, 3).join(', ')}.` : 'Pick a function in this file to see its inputs → outputs anatomy.'],
+            change: ['One tiny change, reviewed as a diff, beats three changes made on faith.', 'Nothing here writes anywhere until you tick the approval box.'],
+            settings: ['Re-import after the app changes: modified files mark old lessons stale instead of silently wrong.', 'Export your learning data before clearing browser storage.'],
+          };
+          const list = tips[view] || tips.dashboard; const tip = list[tipIdx % list.length];
+          return <div className="card" style={{ borderColor: 'var(--accent2)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }} role="note"><span style={{ fontSize: 22 }}>🎓</span><p style={{ flex: '1 1 320px', margin: 0 }}><b>Dev View · {view}</b><br /><span className="muted">{tip}</span></p><button className="btn secondary" onClick={() => setTipIdx(tipIdx + 1)}>Next tip →</button><button className="btn" onClick={() => setView('lesson')}>Learn more</button></div>;
+        })()}
 
         {view === 'dashboard' && <>
           <h1>Your learning projects</h1><p className="muted">Import an app built by Claude, ChatGPT, Cursor, Lovable, Bolt, Replit, v0 — any tool. Paste its GitHub link, or upload a ZIP, and ReverseLearn can map it.</p>
@@ -234,7 +256,7 @@ export default function Home() {
             <div className="card"><h3>⚠️ Caveats (honest limits)</h3>{analysis.warnings.length ? analysis.warnings.map((w, i) => <p className="muted" key={i}>• {w}</p>) : <p className="muted">No warnings. Still: static analysis cannot prove runtime behaviour.</p>}<p className="muted">Observed = directly in source · Inferred = likely, check it · Unverified = needs running the app.</p></div>
           </div>
           <h2>Architecture map <span className="muted">(generated from findings — text fallback is the same data)</span></h2>
-          <div className="card"><h3 style={{ marginTop: 0 }}>Architecture diagram <span className="muted">(pan / zoom — text version below)</span></h3><ArchDiagram analysis={analysis} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} /><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => { setSelectedFile(n.evidence[0]?.path || null); setView('explorer'); }}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
+          <div className="card"><h3 style={{ marginTop: 0 }}>Architecture diagram <span className="muted">(pan / zoom — text version below)</span></h3><ArchDiagram analysis={analysis} selectedId={selectedNodeId} onSelect={(n) => setSelectedNodeId(n.id)} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} /><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => setSelectedNodeId(n.id)}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
             {analysis.edges.map((e, i) => <p className="muted" key={i}>{e.from} → {e.to}: {e.label} {conf(e.confidence)}</p>)}
           </div>
           {analysis.archAlignment ? <>
@@ -244,6 +266,31 @@ export default function Home() {
               {analysis.archAlignment.uncoveredCode.length > 0 && <p className="muted">🧩 In the code but NOT on the diagram: {analysis.archAlignment.uncoveredCode.join(', ')} — your path adds a module for these.</p>}
               <button className="btn" onClick={() => setView('path')}>Follow the learning path aligned to this diagram →</button>
             </div></> : <div className="card"><h3>📐 No architecture diagram found in this project</h3><p className="muted">Your learning path is generated from code analysis (routes, files, data). If the original app has a diagram in its README or docs folder, make sure that folder is included in the import and re-import.</p></div>}
+          {(() => { const node = analysis.nodes.find((n) => n.id === selectedNodeId) || analysis.nodes[0]; if (!node) return null;
+            const techs = detectTechInFiles(current.files.filter((f) => node.evidence.some((e) => e.path === f.path)), level);
+            const links = analysis.edges.filter((e) => e.from === node.id || e.to === node.id);
+            const learn = () => { const p = node.evidence[0]?.path; if (p) { setSelectedFile(p); const t = analysis.traces.find((x) => x.steps.some((st) => st.evidence.some((e) => e.path === p))); if (t) setTraceId(t.id); } setView('lesson'); };
+            return <div className="card" style={{ borderColor: 'var(--accent)' }}>
+              <h3 style={{ marginTop: 0 }}>{node.type === 'UI' ? '🖥️' : node.type === 'API' ? '⚙️' : node.type === 'Database' ? '🗄️' : node.type === 'Auth' ? '🔐' : '🔹'} {node.label} {conf(node.confidence)}</h3>
+              <p>{node.detail}</p>
+              <h3>🧠 Tech behind this part</h3>
+              {techs.length ? <div className="grid">{techs.slice(0, 6).map((t) => <div className="card" key={t.id} style={{ margin: 0 }}><span className="bigicon">{LAYER_ICON[t.layer] || '🔹'}</span> <b>{t.name}</b><p className="muted">{t.plain}</p><p><b>In this app:</b> <span className="muted">{t.inThisCode}</span></p></div>)}</div>
+                : <p className="muted">No technology patterns were detected in this part's files yet — open the file below and use a lesson to explore it.</p>}
+              {links.length > 0 && <><h3>Connections</h3>{links.map((e, i) => <p className="muted" key={i}>{e.from === node.id ? `${node.label} → ${analysis.nodes.find((n) => n.id === e.to)?.label || e.to}` : `${analysis.nodes.find((n) => n.id === e.from)?.label || e.from} → ${node.label}`}: {e.label}</p>)}</>}
+              <h3>Evidence</h3>
+              {node.evidence.map((e, i) => <button key={i} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? ` : line ${e.startLine}` : ''}</button>)}
+              <div className="kv" style={{ marginTop: 10 }}><button className="btn" onClick={learn}>Learn more about this tech →</button><button className="btn secondary" onClick={() => { const p = node.evidence[0]?.path; if (p) { setSelectedFile(p); setView('explorer'); } }}>Open the code</button><button className="btn secondary" onClick={() => setView('trace')}>See it in a feature trace</button></div>
+            </div>; })()}
+          <div className="card">
+            <h3 style={{ marginTop: 0 }}>▶️ Explore your live app with Dev View (companion mode)</h3>
+            <p className="muted">Keep ReverseLearn open in this tab, open your deployed app in a new tab, and click through it there. As you use each screen, find it below: ReverseLearn shows the route, the file behind it, and the tech to learn. <b>Log in only on your app's own page — never type your password or tokens into ReverseLearn.</b> (Embedding your app inside ReverseLearn is deliberately not done: many apps block framing, and your login must stay on its own site.)</p>
+            <label htmlFor="liveurl">Your deployed app URL</label>
+            <input id="liveurl" value={liveUrl || current.liveUrl || ''} onChange={(e) => setLiveUrl(e.target.value)} placeholder="https://your-app.vercel.app" />
+            <div className="kv"><button className="btn" onClick={async () => { const raw = (liveUrl || current.liveUrl || '').trim(); if (!raw) { setError('Paste your deployed app URL first.'); return; } const url = /^https?:\/\//.test(raw) ? raw : 'https://' + raw; await save({ ...current, liveUrl: url }); window.open(url, '_blank', 'noopener,noreferrer'); }}>Open live app in a new tab ↗</button></div>
+            <h3>While you click around your live app, match the screen here:</h3>
+            {analysis.routes.slice(0, 10).map((r) => <div key={r.path + r.file} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--line)', padding: '7px 0' }}><code style={{ minWidth: 150 }}>{r.path}</code><span className="muted" style={{ flex: '1 1 220px' }}>{r.kind} · {r.file}</span><button className="btn secondary" onClick={() => { setSelectedFile(r.file); const t = analysis.traces.find((x) => x.name.endsWith(r.path)); if (t) setTraceId(t.id); setView('lesson'); }}>Learn the tech</button><button className="btn secondary" onClick={() => { setSelectedFile(r.file); setView('trace'); }}>Trace it</button></div>)}
+            {!analysis.routes.length && <p className="muted">No routes were discovered in this import, so screens cannot be matched yet.</p>}
+          </div>
           <h2>Findings with evidence</h2>
           {analysis.findings.slice(0, 14).map((f) => <div className="card" key={f.id}><b>{f.title}</b> {conf(f.confidence)}<p className="muted">{f.summary}</p>{f.evidence.map((e, i) => <button key={i} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? ` : line ${e.startLine}` : ''}</button>)}{f.limitations?.map((l, i) => <p className="muted" key={i}>Limit: {l}</p>)}</div>)}
           <h2>Suggested learning sequence</h2><div className="card">{learningPath(analysis).map((s, i) => <p key={i}><b>{i + 1}. {s.title}</b> <span className="muted">(~{s.minutes} min) — {s.why}</span></p>)}</div>

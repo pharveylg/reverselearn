@@ -32,7 +32,7 @@ export type Project = {
   isSample?: boolean; analysis: Analysis | null; files: InputFile[];
   progress: Record<string, { status: string; hints?: number; confidence?: number; answer?: string; updatedAt: string }>;
   changeProposals?: { id: string; request: string; file: string; diff: string; status: string; createdAt: string }[];
-  stale?: boolean; previousHashes?: Record<string, string>;
+  stale?: boolean; previousHashes?: Record<string, string>; liveUrl?: string;
 };
 export type Level = 'beginner' | 'intermediate' | 'advanced';
 export function hashContent(s: string): string {

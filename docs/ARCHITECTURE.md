@@ -23,3 +23,6 @@
 
 ## Extension points (Phase 2/3, interfaces already allow them)
 Git import (produce the same `InputFile[]`), server AI adapter behind `AI_PROVIDER` env, Postgres sync of the same `Project` shape, more language analyzers as additional stages in `analyzer.ts`.
+
+## Dev View & live-app companion mode
+ReverseLearn does not embed or proxy the user's deployed app and never collects its credentials: framing is commonly blocked (X-Frame-Options/CSP) and logins must remain on the app's own origin. Instead, Overview offers a companion mode: the user opens the deployed app in a new tab (logging in there), while ReverseLearn's route list maps each live screen to its route file, feature trace, and a "Learn the tech" lesson. The in-app Dev View tutor bar provides contextual tidbits per screen from the current project's actual detected tech.

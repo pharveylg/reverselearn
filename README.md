@@ -51,6 +51,10 @@ npm run build      # production build
 
 On import you get: file count, detected languages/framework, routes & API handlers, database/auth/external patterns, a file inventory, and warnings explaining exactly what was excluded and why. Findings are labelled **Observed** (directly in source), **Inferred** (likely — check it), or **Unverified** (needs running the app). Steps ReverseLearn cannot prove are marked unknown instead of invented.
 
+### Learn the tech behind any feature or function
+
+In **Learning Path** and **Lesson Workspace** (and from Feature Trace / the code explorer), pick a feature or a named function and get its full technology breakdown, layer by layer — React components/state, events and controlled forms, fetch/HTTP and JSON, async/await, API route handlers, validation and status codes, Prisma/ORM and SQL, auth/sessions, env config, TypeScript and tests. For each one: a plain-language explanation at your chosen level, how it works under the hood, how *this* feature/function uses it (with file:line evidence), what to learn next, and a self-check question. Technologies not detected are stated as missing/unverified (e.g. "no auth found") instead of being invented.
+
 ## The learning loop
 
 Import → architecture map → pick a feature → trace its flow (UI → transport → backend → data → tests) → lesson at Beginner/Intermediate/Advanced → exercises (identify → predict → trace → find missing validation → tiny change → test plan → explain it back) → **Change Lab**: describe a change, review the exact diff, tick approval, export a `.patch` (nothing is written before approval; ReverseLearn only ever edits its own copy — rollback is re-importing your original ZIP).

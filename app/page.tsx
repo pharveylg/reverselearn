@@ -9,6 +9,7 @@ import { generateExercises, generateLesson, learningPath } from '../lib/lessons'
 import { makeDiff, diffStats } from '../lib/diff';
 import { redactSecrets } from '../lib/security';
 import { parseGitHubUrl, fetchDefaultBranch, fetchRepoZipBlob, fetchRepoFilesViaTree } from '../lib/github';
+import { techBehindFeature, functionTech, detectTechInFiles } from '../lib/tech';
 
 type View = 'dashboard' | 'import' | 'overview' | 'explorer' | 'trace' | 'path' | 'lesson' | 'change' | 'settings';
 const NAV: { id: View; label: string }[] = [
@@ -36,6 +37,7 @@ export default function Home() {
   const [traceId, setTraceId] = useState(''); const [level, setLevel] = useState<Level>('beginner');
   const [quizPicked, setQuizPicked] = useState<number | null>(null);
   const [hintIdx, setHintIdx] = useState<Record<string, number>>({});
+  const [funcSymbol, setFuncSymbol] = useState('');
   const [changeReq, setChangeReq] = useState(''); const [changeFile, setChangeFile] = useState('');
   const [edited, setEdited] = useState(''); const [diff, setDiff] = useState(''); const [approved, setApproved] = useState(false);
   const [compare, setCompare] = useState<{ added: string[]; removed: string[]; modified: string[] } | null>(null);
@@ -111,6 +113,8 @@ export default function Home() {
   const exercises = useMemo(() => (analysis ? generateExercises(analysis) : []), [analysis]);
   const trace = analysis?.traces.find((t) => t.id === traceId) || analysis?.traces[0];
   const selectedContent = current?.files.find((f) => f.path === selectedFile)?.content || '';
+  const techLayers = useMemo(() => (analysis && current && trace ? techBehindFeature(analysis, current.files, trace, level) : []), [analysis, current, trace, level]);
+  const funcTech = useMemo(() => (analysis && current && selectedFile ? functionTech(analysis, current.files, selectedFile, funcSymbol || undefined) : null), [analysis, current, selectedFile, funcSymbol]);
   const doneCount = current ? Object.values(current.progress).filter((p) => p.status === 'done').length : 0;
 
   return (
@@ -190,7 +194,7 @@ export default function Home() {
             <select aria-label="Category filter" value={catFilter} onChange={(e) => setCatFilter(e.target.value)} style={{ maxWidth: 220 }}><option value="all">All categories</option>{['frontend', 'backend', 'database', 'test', 'config', 'docs', 'other'].map((c) => <option key={c}>{c}</option>)}</select></div>
           <div className="grid" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
             <div className="card" style={{ maxHeight: 560, overflow: 'auto' }}>{filteredFiles.map((f) => <button key={f.path} className="filebtn" onClick={() => setSelectedFile(f.path)}>{f.path}<br /><span className="muted">{f.category} · {f.language} · {f.symbols.join(', ')}</span>{f.sensitive && <span className="pill unverified">redacted</span>}</button>)}{!filteredFiles.length && <p className="muted">No files match.</p>}</div>
-            <div className="card"><h3>{selectedFile || 'Select a file'}</h3>{selectedFile && <><p className="muted">{analysis.files.find((f) => f.path === selectedFile)?.category} · symbols: {analysis.files.find((f) => f.path === selectedFile)?.symbols.join(', ') || 'none'}</p><pre>{redactSecrets(selectedContent).split('\n').slice(0, 120).map((l, i) => `${String(i + 1).padStart(3)}  ${l}`).join('\n')}</pre><button className="btn secondary" onClick={() => setView('lesson')}>Teach me this file →</button></>}</div>
+            <div className="card"><h3>{selectedFile || 'Select a file'}</h3>{selectedFile && <><p className="muted">{analysis.files.find((f) => f.path === selectedFile)?.category} · symbols: {analysis.files.find((f) => f.path === selectedFile)?.symbols.join(', ') || 'none'}</p><pre>{redactSecrets(selectedContent).split('\n').slice(0, 120).map((l, i) => `${String(i + 1).padStart(3)}  ${l}`).join('\n')}</pre><div className="kv"><button className="btn secondary" onClick={() => setView('lesson')}>Teach me this file →</button><button className="btn secondary" onClick={() => setView('lesson')}>Learn the tech behind its functions →</button></div></>}</div>
           </div>
         </>}
 
@@ -198,13 +202,27 @@ export default function Home() {
           <h1>Feature trace</h1><p className="muted">Each step is labelled. “Unverified” means: we could not prove it from source — that honesty is the point.</p>
           <label htmlFor="trace">Feature / route</label><select id="trace" value={trace?.id || ''} onChange={(e) => setTraceId(e.target.value)}>{analysis.traces.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           {trace ? <div className="card"><h3>{trace.name}</h3>{trace.steps.map((s, i) => <div className="step" key={i}><b>{s.title}</b> {conf(s.confidence)}<p className="muted">{s.body}</p>{s.evidence.map((e, j) => <button key={j} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? `:${e.startLine}` : ''}</button>)}</div>)}
-            {trace.unknowns.length > 0 && <p>❓ <b>Unknowns:</b> {trace.unknowns.join(' ')}</p>}<button className="btn secondary" onClick={() => setView('lesson')}>Turn this into a lesson →</button></div>
+            {trace.unknowns.length > 0 && <p>❓ <b>Unknowns:</b> {trace.unknowns.join(' ')}</p>}
+            <h3>🧠 Tech behind this feature</h3>
+            {techLayers.map((l) => <p key={l.layer} style={{ margin: '6px 0' }}><b>{l.layer}:</b> {l.tech.map((t) => <span className="pill" key={t}>{t}</span>)} {conf(l.confidence)}</p>)}
+            <div className="kv"><button className="btn secondary" onClick={() => setView('lesson')}>Turn this into a lesson →</button><button className="btn" onClick={() => setView('lesson')}>Learn the tech behind this feature →</button></div></div>
             : <div className="card"><p className="muted">No routes were discovered, so no trace can be built without inventing one — so we don’t. Try the explorer, or check the import warnings.</p></div>}
         </>}
 
         {current && analysis && view === 'path' && <>
           <h1>Learning path & exercises</h1>
-          {learningPath(analysis).map((s, i) => <div className="card" key={i}><b>{i + 1}. {s.title}</b> <span className="muted">~{s.minutes} min (rough estimate)</span><p className="muted">{s.why}</p><p>{s.files.map((f) => <button key={f} className="filebtn" onClick={() => { setSelectedFile(f); setView('explorer'); }}>📄 {f}</button>)}</p></div>)}
+          {learningPath(analysis).map((s, i) => { const techs = detectTechInFiles(current.files.filter((f) => s.files.includes(f.path)), level); return (
+            <div className="card" key={i}><b>{i + 1}. {s.title}</b> <span className="muted">~{s.minutes} min (rough estimate)</span><p className="muted">{s.why}</p>
+            {techs.length > 0 && <p style={{ margin: '4px 0' }}><span className="muted">Tech you will meet here: </span>{techs.slice(0, 6).map((t) => <span className="pill" key={t.id} title={t.plain}>{t.name}</span>)}</p>}
+            <p>{s.files.map((f) => <button key={f} className="filebtn" onClick={() => { setSelectedFile(f); setView('explorer'); }}>📄 {f}</button>)}</p></div>); })}
+          <h2>🧠 Learn the tech behind a feature</h2>
+          <p className="muted">Pick a feature and learn each technology it uses — what it is, how it works under the hood, and how this app uses it.</p>
+          {analysis.traces.map((t) => { const ls = techBehindFeature(analysis, current.files, t, level); return (
+            <div className="card" key={t.id}><b>{t.name}</b>
+              {ls.map((l) => <p key={l.layer} style={{ margin: '5px 0' }}><b>{l.layer}:</b> {l.tech.map((x) => <span className="pill" key={x}>{x}</span>)}</p>)}
+              <button className="btn" onClick={() => { setTraceId(t.id); const f = t.steps[0]?.evidence[0]?.path; if (f) setSelectedFile(f); setView('lesson'); }}>Learn the tech behind this →</button>
+            </div>); })}
+          {!analysis.traces.length && <div className="card"><p className="muted">No features were discovered yet, so there is no honest tech breakdown to show. Import a project with routes (or open the SAMPLE app) first.</p></div>}
           <h2>Exercises (progress is saved, “done” = your self-assessment, not proven mastery)</h2>
           {exercises.map((ex) => { const prog = current.progress[ex.id]; return (
             <div className="card" key={ex.id}><h3>{ex.title} {prog?.status === 'done' && <span className="pill observed">done</span>}</h3>
@@ -222,11 +240,24 @@ export default function Home() {
         {current && analysis && view === 'lesson' && lesson && <>
           <h1>Lesson workspace</h1>
           <label htmlFor="lvl">Explanation level</label><select id="lvl" value={level} onChange={(e) => { setLevel(e.target.value as Level); setQuizPicked(null); }} style={{ maxWidth: 260 }}><option value="beginner">Beginner – plain language</option><option value="intermediate">Intermediate – patterns & trade-offs</option><option value="advanced">Advanced – internals & failure modes</option></select>
-          <label htmlFor="lfile">File to teach</label><select id="lfile" value={selectedFile || ''} onChange={(e) => setSelectedFile(e.target.value)} style={{ maxWidth: 520 }}>{analysis.files.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}</select>
+          <label htmlFor="lfile">File to teach</label><select id="lfile" value={selectedFile || ''} onChange={(e) => { setSelectedFile(e.target.value); setFuncSymbol(''); }} style={{ maxWidth: 520 }}>{analysis.files.map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}</select>
+          {analysis.traces.length > 0 && <><label htmlFor="lfeat">Feature to learn the tech behind</label><select id="lfeat" value={trace?.id || ''} onChange={(e) => setTraceId(e.target.value)} style={{ maxWidth: 520 }}>{analysis.traces.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></>}
+          {(analysis.files.find((f) => f.path === selectedFile)?.symbols.length || 0) > 0 && <><label htmlFor="lfunc">Function in this file</label><select id="lfunc" value={funcSymbol} onChange={(e) => setFuncSymbol(e.target.value)} style={{ maxWidth: 520 }}><option value="">(first function in file)</option>{(analysis.files.find((f) => f.path === selectedFile)?.symbols || []).map((x) => <option key={x} value={x}>{x}</option>)}</select></>}
           <div className="card"><h3>{lesson.title}</h3><p>{lesson.plain}</p><h3>Why this exists</h3><p className="muted">{lesson.why}</p>
             {lesson.excerpt && <><h3>Evidence — {lesson.excerpt.path}</h3><pre>{lesson.excerpt.lines}</pre></>}
             <h3>Words to know</h3>{lesson.terms.map((t) => <p key={t.term}><b>{t.term}:</b> <span className="muted">{t.def}</span></p>)}
             <h3>How it connects</h3><p className="muted">{lesson.connections}</p>
+            {techLayers.length > 0 && <><h3>🧠 Tech behind this feature {trace ? `— ${trace.name}` : ''}</h3>
+              <p className="muted">Every technology this feature actually uses, layer by layer. Wording follows your level above; “what breaks without it” is the self-check.</p>
+              {techLayers.map((l) => <div className="step" key={l.layer}><b>{l.layer}</b> {conf(l.confidence)}<p>{l.tech.map((t) => <span className="pill" key={t}>{t}</span>)}</p><p><b>How this tech works:</b> <span className="muted">{l.howItWorks}</span></p><p><b>In this feature:</b> <span className="muted">{l.inThisFeature}</span></p><p>✅ <b>Self-check:</b> <span className="muted">{l.selfCheck}</span></p>{l.evidence.map((e, j) => <button key={j} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? `:${e.startLine}` : ''}</button>)}</div>)}
+            </>}
+            {funcTech && <><h3>🔧 Tech behind the function <code>{funcTech.symbol}</code></h3>
+              <p className="muted">{funcTech.file} : line {funcTech.startLine}</p><pre>{funcTech.signature}</pre>
+              <p><b>Inputs:</b> <span className="muted">{funcTech.inputs}</span></p><p><b>Output:</b> <span className="muted">{funcTech.output}</span></p>
+              <pre>{funcTech.excerpt}</pre>
+              <div className="grid">{funcTech.concepts.map((c) => <div className="card" key={c.id} style={{ margin: 0 }}><b>{c.name}</b> <span className="pill">{c.layer}</span><p className="muted">{c.plain}</p><p><b>Deeper:</b> <span className="muted">{c.underTheHood}</span></p><p><b>In this function:</b> <span className="muted">{c.inThisCode}</span></p><p><b>Learn next:</b> <span className="muted">{c.learnNext}</span></p><p className="muted">Evidence: {c.evidence.map((e) => `${e.path}:${e.startLine || ''}`).join(', ')}</p></div>)}</div>
+              {!funcTech.concepts.length && <p className="muted">No known technology patterns were detected inside this function — try another function, or read it with the file lesson above.</p>}
+            </>}
             <h3>Why might the AI have chosen this? <span className="pill inferred">inference</span></h3><p className="muted">{lesson.whyChosen}</p>
             <h3>Alternatives & trade-offs</h3><p className="muted">{lesson.alternatives}</p>
             <h3>When it breaks</h3><p className="muted">{lesson.failures}</p>

@@ -1,0 +1,34 @@
+REVERSELEARN - START HERE (NO TERMINAL / NO CODING NEEDED)
+============================================================
+
+WINDOWS
+  1. Unzip this folder anywhere (e.g. your Desktop).
+  2. Double-click:  Start-ReverseLearn-Windows.bat
+  3. First run takes a few minutes. After that, your browser opens
+     automatically at http://localhost:3000
+
+MAC
+  1. Unzip this folder anywhere.
+  2. Right-click  Start-ReverseLearn-Mac.command  and choose Open.
+     (Right-click > Open is needed the first time because it did not
+      come from the App Store - choose Open again if asked.)
+  3. Your browser opens automatically at http://localhost:3000
+
+LINUX
+  Double-click Start-ReverseLearn-Linux.sh (or mark it executable
+  from its Properties > Permissions tab, then double-click).
+
+IF IT ASKS YOU TO INSTALL NODE.JS
+  The launcher opens nodejs.org for you. Download the "LTS" version,
+  run the installer like any normal program (keep clicking Next),
+  then double-click the launcher again. That is a one-time step.
+
+USING IT
+  - First click "Load the labelled SAMPLE app" to learn the tool.
+  - Then Import > upload a ZIP of any app you built
+    (GitHub: green Code button > Download ZIP).
+  - Everything runs on your own computer. Your code is never uploaded.
+
+STOPPING IT
+  Close the black launcher window. To restart, double-click it again.
+  Your projects are saved in your browser between runs.

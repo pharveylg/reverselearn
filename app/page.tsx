@@ -10,6 +10,8 @@ import { makeDiff, diffStats } from '../lib/diff';
 import { redactSecrets } from '../lib/security';
 import { parseGitHubUrl, fetchDefaultBranch, fetchRepoZipBlob, fetchRepoFilesViaTree } from '../lib/github';
 import { techBehindFeature, functionTech, detectTechInFiles } from '../lib/tech';
+import { buildSequence } from '../lib/sequence';
+import { useRef } from 'react';
 
 type View = 'dashboard' | 'import' | 'overview' | 'explorer' | 'trace' | 'path' | 'lesson' | 'change' | 'settings';
 const NAV: { id: View; label: string }[] = [
@@ -25,6 +27,55 @@ function stepIcon(title: string) { const t = title.toLowerCase(); if (t.includes
 function conf(c: string) { return <span className={`pill ${c}`}>{c}</span>; }
 function download(name: string, text: string, type = 'text/plain') {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+
+function ArchDiagram({ analysis, onOpen }: { analysis: Analysis; onOpen: (p: string) => void }) {
+  const [scale, setScale] = useState(1); const [off, setOff] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  const order = ['UI', 'API', 'Auth', 'Database', 'External', 'Files'];
+  const cols = new Map<string, number>();
+  const pos = new Map<string, { x: number; y: number; n: (typeof analysis.nodes)[0] }>();
+  for (const n of analysis.nodes) { const col = Math.max(0, order.indexOf(n.type)); const row = cols.get(n.type) || 0; cols.set(n.type, row + 1); pos.set(n.id, { x: 24 + col * 228, y: 24 + row * 112, n }); }
+  const W = 24 + (Math.max(1, ...order.map((t, i) => (analysis.nodes.some((n) => n.type === t) ? i + 1 : 0))) * 228);
+  const H = 48 + Math.max(1, ...[...cols.values()]) * 112;
+  const center = (id: string) => { const p = pos.get(id); return p ? { x: p.x + 96, y: p.y + 42 } : { x: 0, y: 0 }; };
+  const wrap = (txt: string, max = 22) => { const words = txt.split(' '); const lines: string[] = []; let cur = ''; for (const w of words) { if ((cur + ' ' + w).trim().length > max) { lines.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) lines.push(cur.trim()); return lines.slice(0, 2); };
+  return (<div>
+    <div className="svgtools"><button onClick={() => setScale(Math.min(2, scale + 0.15))}>＋ Zoom in</button><button onClick={() => setScale(Math.max(0.4, scale - 0.15))}>－ Zoom out</button><button onClick={() => { setScale(1); setOff({ x: 0, y: 0 }); }}>↺ Reset view</button><span className="muted" style={{ alignSelf: 'center' }}>Drag to pan · scroll inside the box · click a box to open its file ({Math.round(scale * 100)}%)</span></div>
+    <div className="svgwrap" style={{ maxHeight: 460, cursor: 'grab' }}
+      onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y }; }}
+      onPointerMove={(e) => { if (drag.current) setOff({ x: drag.current.ox + (e.clientX - drag.current.x), y: drag.current.oy + (e.clientY - drag.current.y) }); }}
+      onPointerUp={() => { drag.current = null; }} onPointerLeave={() => { drag.current = null; }}>
+      <svg width={Math.max(640, W)} height={Math.max(240, H)} role="img" aria-label="Architecture diagram">
+        <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9db0c1" /></marker></defs>
+        <g transform={`translate(${off.x},${off.y}) scale(${scale})`}>
+          {analysis.edges.map((e, i) => { const a = center(e.from), b = center(e.to); return (<g key={i}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#9db0c1" strokeWidth="1.8" markerEnd="url(#arr)" /><text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} fontSize="10" textAnchor="middle" className="mut">{e.label.slice(0, 34)}</text></g>); })}
+          {[...pos.values()].map(({ x, y, n }) => (<g key={n.id} onClick={() => { const p = n.evidence[0]?.path; if (p) onOpen(p); }} style={{ cursor: 'pointer' }}>
+            <rect x={x} y={y} width="192" height="84" rx="13" fill="#1d2631" stroke={n.confidence === 'observed' ? '#2dd4a8' : n.confidence === 'inferred' ? '#ffb84d' : '#ff7a7a'} strokeWidth="2" />
+            <text x={x + 96} y={y + 25} fontSize="13" fontWeight="800" textAnchor="middle">{n.type === 'UI' ? '🖥️ ' : n.type === 'API' ? '⚙️ ' : n.type === 'Database' ? '🗄️ ' : n.type === 'Auth' ? '🔐 ' : '🔹 '}{n.label.slice(0, 24)}</text>
+            {wrap(n.detail).map((l, i) => <text key={i} x={x + 96} y={y + 46 + i * 14} fontSize="10.5" textAnchor="middle" className="mut">{l}</text>)}
+            <text x={x + 96} y={y + 78} fontSize="9.5" textAnchor="middle" className="mut">{n.confidence}</text></g>))}
+        </g>
+      </svg>
+    </div></div>);
+}
+
+function SequenceDiagram({ analysis, files, trace, onOpen }: { analysis: Analysis; files: Project['files']; trace: NonNullable<Analysis['traces']>[0]; onOpen: (p: string) => void }) {
+  const seq = buildSequence(analysis, files, trace);
+  const X = (id: string) => 90 + seq.actors.findIndex((a) => a.id === id) * 190;
+  const W = Math.max(640, 180 + seq.actors.length * 190); const H = 118 + seq.messages.length * 50;
+  return (<div className="svgwrap"><svg width={W} height={H} role="img" aria-label={`Sequence diagram for ${trace.name}`}>
+    {seq.actors.map((a) => (<g key={a.id}>
+      <rect x={X(a.id) - 72} y={14} width="144" height="42" rx="11" fill="#1d2631" stroke="#4da3ff" strokeWidth="1.6" />
+      <text x={X(a.id)} y={40} fontSize="13" fontWeight="800" textAnchor="middle">{a.icon} {a.label}</text>
+      <line x1={X(a.id)} y1={56} x2={X(a.id)} y2={H - 12} stroke="#2a3746" strokeDasharray="5 5" /></g>))}
+    {seq.messages.map((msg) => { const y = 92 + (msg.n - 1) * 50; const x1 = X(msg.from), x2 = X(msg.to); const dir = x2 >= x1 ? 1 : -1; const col = msg.kind === 'unknown' ? '#ff7a7a' : msg.kind === 'return' ? '#2dd4a8' : '#4da3ff';
+      return (<g key={msg.n} onClick={() => { if (msg.evidence) onOpen(msg.evidence); }} style={{ cursor: msg.evidence ? 'pointer' : 'default' }}>
+        <circle cx={x1} cy={y} r="10" fill={col} /><text x={x1} y={y + 3.5} fontSize="10" fontWeight="900" textAnchor="middle" fill="#04101f">{msg.n}</text>
+        <line x1={x1} y1={y} x2={x2 - dir * 8} y2={y} stroke={col} strokeWidth="2" strokeDasharray={msg.kind === 'call' ? '' : '6 4'} markerEnd="url(#arr)" />
+        <text x={(x1 + x2) / 2} y={y - 8} fontSize="11" textAnchor="middle">{msg.kind === 'unknown' ? '❓ ' : ''}{msg.label.slice(0, 52)}</text></g>); })}
+  </svg></div>);
 }
 
 export default function Home() {
@@ -183,7 +234,7 @@ export default function Home() {
             <div className="card"><h3>⚠️ Caveats (honest limits)</h3>{analysis.warnings.length ? analysis.warnings.map((w, i) => <p className="muted" key={i}>• {w}</p>) : <p className="muted">No warnings. Still: static analysis cannot prove runtime behaviour.</p>}<p className="muted">Observed = directly in source · Inferred = likely, check it · Unverified = needs running the app.</p></div>
           </div>
           <h2>Architecture map <span className="muted">(generated from findings — text fallback is the same data)</span></h2>
-          <div className="card"><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => { setSelectedFile(n.evidence[0]?.path || null); setView('explorer'); }}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
+          <div className="card"><h3 style={{ marginTop: 0 }}>Architecture diagram <span className="muted">(pan / zoom — text version below)</span></h3><ArchDiagram analysis={analysis} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} /><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => { setSelectedFile(n.evidence[0]?.path || null); setView('explorer'); }}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
             {analysis.edges.map((e, i) => <p className="muted" key={i}>{e.from} → {e.to}: {e.label} {conf(e.confidence)}</p>)}
           </div>
           {analysis.archAlignment ? <>
@@ -211,7 +262,11 @@ export default function Home() {
         {current && analysis && view === 'trace' && <>
           <h1>Feature trace</h1><p className="muted">Each step is labelled. “Unverified” means: we could not prove it from source — that honesty is the point.</p>
           <label htmlFor="trace">Feature / route</label><select id="trace" value={trace?.id || ''} onChange={(e) => setTraceId(e.target.value)}>{analysis.traces.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
-          {trace ? <div className="card"><h3>{trace.name}</h3>{trace.steps.map((s, i) => <div className="step" key={i}><b>{s.title}</b> {conf(s.confidence)}<p className="muted">{s.body}</p>{s.evidence.map((e, j) => <button key={j} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? `:${e.startLine}` : ''}</button>)}</div>)}
+          {trace ? <div className="card"><h3>{trace.name}</h3>
+            <h3>🔀 Sequence diagram — who talks to whom, in order</h3>
+            <p className="muted">Blue = a request/call · green dashed = the reply · <span className="unverified">red dashed ❓ = could not be verified in code</span>. Click a numbered message to open its evidence file.</p>
+            <SequenceDiagram analysis={analysis} files={current.files} trace={trace} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} />
+            {trace.steps.map((s, i) => <div className="step" key={i}><b>{s.title}</b> {conf(s.confidence)}<p className="muted">{s.body}</p>{s.evidence.map((e, j) => <button key={j} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? `:${e.startLine}` : ''}</button>)}</div>)}
             {trace.unknowns.length > 0 && <p>❓ <b>Unknowns:</b> {trace.unknowns.join(' ')}</p>}
             <h3>🧠 Tech behind this feature</h3>
             {techLayers.map((l) => <p key={l.layer} style={{ margin: '6px 0' }}><b>{l.layer}:</b> {l.tech.map((t) => <span className="pill" key={t}>{t}</span>)} {conf(l.confidence)}</p>)}

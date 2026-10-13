@@ -34,3 +34,6 @@ code,pre{font-family:ui-monospace,Menlo,Consolas,monospace}pre{background:#0b0f1
 .roadmap .rm.gap::before{border-color:var(--bad);color:var(--bad)}
 .progressbar{height:14px;background:#0b0f14;border:1px solid var(--line);border-radius:99px;overflow:hidden}.progressbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .bigicon{font-size:26px}
+.svgwrap{background:#0b0f14;border:1px solid var(--line);border-radius:14px;overflow:auto;margin:12px 0}
+.svgtools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.svgtools button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-weight:700}
+svg text{fill:var(--text);font-family:system-ui,sans-serif}svg .mut{fill:var(--muted)}

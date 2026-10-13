@@ -15,7 +15,11 @@ export type ArchNode = { id: string; type: string; label: string; detail: string
 export type ArchEdge = { from: string; to: string; label: string; confidence: Confidence };
 export type TraceStep = { title: string; body: string; confidence: Confidence; evidence: EvidenceRef[] };
 export type FeatureTrace = { id: string; name: string; steps: TraceStep[]; unknowns: string[] };
+export type ArchitectureDoc = { path: string; kind: 'mermaid' | 'plantuml' | 'headings' | 'image'; nodes: { id: string; label: string }[]; edges: { from: string; to: string; label?: string }[] };
+export type ArchAlignmentItem = { nodeId: string; label: string; status: 'matched' | 'declared-only'; files: string[]; reason: string };
 export type Analysis = {
+  architectureDocs?: ArchitectureDoc[];
+  archAlignment?: { docPath: string; kind: string; items: ArchAlignmentItem[]; uncoveredCode: string[] } | null;
   version: string; analyzedAt: string; languages: Record<string, number>;
   frameworks: string[]; dependencies: string[]; devDependencies: string[];
   files: SourceFileMeta[]; routes: RouteInfo[]; findings: Finding[];

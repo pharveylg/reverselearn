@@ -1,5 +1,6 @@
 import { Analysis, ArchEdge, ArchNode, FeatureTrace, Finding, InputFile, RouteInfo, SourceFileMeta, TraceStep, hashContent, uid } from './types';
 import { detectSecretKinds, isSensitivePath } from './security';
+import { findArchitectureDocs, alignArchitecture } from './architecture';
 
 export const ANALYZER_VERSION = 'reverselearn-analyzer/1.0.0';
 
@@ -117,7 +118,11 @@ export function analyzeProject(input: InputFile[], excludedCount = 0): Analysis 
   // Feature traces
   const traces: FeatureTrace[] = routes.slice(0, 12).map((r) => buildTrace(r, input, dbHits.map((f) => f.path), authHits.map((f) => f.path), testFiles.map((f) => f.path)));
 
-  return { version: ANALYZER_VERSION, analyzedAt: new Date().toISOString(), languages, frameworks, dependencies: deps, devDependencies: devDeps, files: files.sort((a, b) => a.path.localeCompare(b.path)), routes, findings, nodes, edges, traces, warnings, excludedCount, sensitiveFiles, envVarNames: [...envNames].sort() };
+  const architectureDocs = findArchitectureDocs(input);
+  const partial = { files: files.sort((a, b) => a.path.localeCompare(b.path)), routes, frameworks } as unknown as Parameters<typeof alignArchitecture>[1];
+  const archAlignment = architectureDocs.length && architectureDocs[0].nodes.length ? alignArchitecture(architectureDocs[0], partial, input) : null;
+  if (architectureDocs.length) add('architecture-doc', `Architecture diagram found in ${architectureDocs[0].path}`, `The project ships a ${architectureDocs[0].kind} diagram with ${architectureDocs[0].nodes.length} node(s). It is treated as a declared claim and checked against code — not as proof. The learning path is aligned to it.`, [{ path: architectureDocs[0].path }], 'inferred', ['Diagrams in AI-generated projects are often aspirational or stale; verify each box.']);
+  return { architectureDocs, archAlignment, version: ANALYZER_VERSION, analyzedAt: new Date().toISOString(), languages, frameworks, dependencies: deps, devDependencies: devDeps, files: files.sort((a, b) => a.path.localeCompare(b.path)), routes, findings, nodes, edges, traces, warnings, excludedCount, sensitiveFiles, envVarNames: [...envNames].sort() };
 }
 
 function methodsIn(content: string): string[] {

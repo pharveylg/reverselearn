@@ -51,6 +51,10 @@ npm run build      # production build
 
 On import you get: file count, detected languages/framework, routes & API handlers, database/auth/external patterns, a file inventory, and warnings explaining exactly what was excluded and why. Findings are labelled **Observed** (directly in source), **Inferred** (likely — check it), or **Unverified** (needs running the app). Steps ReverseLearn cannot prove are marked unknown instead of invented.
 
+### Aligned to your app's own architecture diagram
+
+Most AI-built apps ship a diagram (README, `docs/architecture.md`, Mermaid/PlantUML, `.mmd`). ReverseLearn parses it, orders your **Learning Path by the diagram's flow**, and checks **every box against real code**: boxes get ✓ *matched* (with the files) or ⚠️ *declared only — not found in code* (planned / renamed / external / stale diagram), and code areas missing from the diagram become their own module. The diagram is treated as a claim to verify, never as proof.
+
 ### Learn the tech behind any feature or function
 
 In **Learning Path** and **Lesson Workspace** (and from Feature Trace / the code explorer), pick a feature or a named function and get its full technology breakdown, layer by layer — React components/state, events and controlled forms, fetch/HTTP and JSON, async/await, API route handlers, validation and status codes, Prisma/ORM and SQL, auth/sessions, env config, TypeScript and tests. For each one: a plain-language explanation at your chosen level, how it works under the hood, how *this* feature/function uses it (with file:line evidence), what to learn next, and a self-check question. Technologies not detected are stated as missing/unverified (e.g. "no auth found") instead of being invented.

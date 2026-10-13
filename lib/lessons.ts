@@ -56,13 +56,28 @@ export function generateExercises(analysis: Analysis): Exercise[] {
   return ex;
 }
 
-export function learningPath(analysis: Analysis): { title: string; why: string; minutes: number; files: string[] }[] {
+export type PathModule = { title: string; why: string; minutes: number; files: string[]; source: 'architecture-diagram' | 'code-analysis'; diagramNode?: string; status?: string };
+export function learningPath(analysis: Analysis): PathModule[] {
   const fw = analysis.frameworks;
-  return [
-    { title: 'Big picture: what is this app?', why: `Stack detected: ${fw.join(', ') || 'unknown'}. Start with the map, not random files.`, minutes: 10, files: analysis.files.slice(0, 3).map((f) => f.path) },
-    { title: 'Meet the entry points', why: 'Routes are where URLs become screens/data.', minutes: 15, files: analysis.routes.slice(0, 4).map((r) => r.file) },
-    { title: 'Follow one feature end-to-end', why: 'One real flow teaches more than skimming everything.', minutes: 20, files: analysis.traces[0]?.steps.flatMap((s) => s.evidence.map((e) => e.path)).slice(0, 4) || [] },
-    { title: 'Where does data live?', why: analysis.files.some((f) => f.category === 'database') ? 'Database files were detected — connect them to the trace.' : 'No DB files detected; learn how this app persists (or does not).', minutes: 15, files: analysis.files.filter((f) => f.category === 'database').map((f) => f.path) },
-    { title: 'Make and verify a tiny change', why: 'Ownership comes from changing something safely.', minutes: 20, files: analysis.routes.slice(0, 1).map((r) => r.file) },
+  const generic: PathModule[] = [
+    { title: 'Big picture: what is this app?', why: `Stack detected: ${fw.join(', ') || 'unknown'}. Start with the map, not random files.`, minutes: 10, files: analysis.files.slice(0, 3).map((f) => f.path), source: 'code-analysis' },
+    { title: 'Meet the entry points', why: 'Routes are where URLs become screens/data.', minutes: 15, files: analysis.routes.slice(0, 4).map((r) => r.file), source: 'code-analysis' },
+    { title: 'Follow one feature end-to-end', why: 'One real flow teaches more than skimming everything.', minutes: 20, files: analysis.traces[0]?.steps.flatMap((s) => s.evidence.map((e) => e.path)).slice(0, 4) || [], source: 'code-analysis' },
+    { title: 'Where does data live?', why: analysis.files.some((f) => f.category === 'database') ? 'Database files were detected — connect them to the trace.' : 'No DB files detected; learn how this app persists (or does not).', minutes: 15, files: analysis.files.filter((f) => f.category === 'database').map((f) => f.path), source: 'code-analysis' },
+    { title: 'Make and verify a tiny change', why: 'Ownership comes from changing something safely.', minutes: 20, files: analysis.routes.slice(0, 1).map((r) => r.file), source: 'code-analysis' },
   ];
+  const al = analysis.archAlignment;
+  if (!al?.items.length) return generic;
+  const doc = al.docPath;
+  const aligned: PathModule[] = [
+    { title: `Read the app's own architecture diagram (${doc})`, why: `This project ships a ${al.kind} diagram. Your path below follows ITS boxes in flow order — each one then checked against real code, because AI-era diagrams are often aspirational or stale.`, minutes: 10, files: [doc], source: 'architecture-diagram' },
+    ...al.items.slice(0, 8).map((it, i): PathModule => ({
+      title: `Diagram step ${i + 1}: ${it.label}`,
+      why: it.status === 'matched' ? `The diagram declares this box, and code evidence was found. Learn what this part does in the diagram's flow, then verify it in the matched files.` : `⚠️ The diagram declares this box, but NO matching code was found. Learn to verify: is it planned, renamed, external, or is the diagram stale? Do not assume it exists.`,
+      minutes: 15, files: it.files.length ? it.files : [doc], source: 'architecture-diagram', diagramNode: it.label, status: it.status,
+    })),
+  ];
+  if (al.uncoveredCode.length) aligned.push({ title: `Code the diagram does NOT show: ${al.uncoveredCode.join(', ')}`, why: 'These areas exist in the code but are missing from the diagram — a common gap in AI-built projects. Diagram is a map, not the territory.', minutes: 15, files: analysis.files.filter((f) => al.uncoveredCode.includes(f.category)).slice(0, 4).map((f) => f.path), source: 'architecture-diagram' });
+  aligned.push({ title: 'Make and verify a tiny change', why: 'Ownership comes from changing something safely — now guided by the diagram you just verified.', minutes: 20, files: analysis.routes.slice(0, 1).map((r) => r.file), source: 'architecture-diagram' });
+  return aligned;
 }

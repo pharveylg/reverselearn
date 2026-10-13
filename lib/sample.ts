@@ -8,5 +8,6 @@ export const SAMPLE_FILES: InputFile[] = [
   { path: 'prisma/schema.prisma', content: `model Task { id Int @id @default(autoincrement()) title String createdAt DateTime @default(now()) }` },
   { path: 'app/tasks.test.ts', content: `import { describe, it, expect } from 'vitest';\ndescribe('tasks', () => { it('rejects empty title', () => { expect(true).toBe(true); }); });` },
   { path: 'README.md', content: '# Sample Task App\nA SAMPLE project bundled with ReverseLearn for learning and tests.' },
+  { path: 'docs/architecture.md', content: '# Architecture\n\n```mermaid\nflowchart LR\n  UI[Browser UI - HomePage] --> API[API Route /api/tasks]\n  API --> ORM[Prisma ORM]\n  ORM --> DB[(Task Database)]\n  API --> AUTH[User Sign-in]\n```\n' },
 ];
 export const SAMPLE_NAME = 'SAMPLE — Task App (demo data)';

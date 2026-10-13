@@ -1,5 +1,6 @@
 #!/bin/bash
 cd "$(dirname "$0")"
+export NEXT_TELEMETRY_DISABLED=1
 echo "ReverseLearn - keep this window open while you use the app"
 if ! command -v node >/dev/null 2>&1; then
   echo ""

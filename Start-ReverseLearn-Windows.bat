@@ -1,6 +1,7 @@
 @echo off
 title ReverseLearn - keep this window open while you use the app
 cd /d "%~dp0"
+set NEXT_TELEMETRY_DISABLED=1
 where node >nul 2>nul
 if %errorlevel% neq 0 (
   echo.

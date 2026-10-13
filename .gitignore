@@ -12,3 +12,6 @@ coverage/
 .cache/
 .local/
 tsconfig.tsbuildinfo
+
+ReverseLearn-Local.zip
+ReverseLearn-Local.zip.sha256

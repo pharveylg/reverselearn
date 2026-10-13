@@ -14,3 +14,5 @@
 - **Firewall prompt**: minimized by binding to `127.0.0.1` only (launchers do this). If prompted anyway, choosing "private/home network only" or denying inbound access still lets the app work in your own browser.
 - **Dependency audit**: `npm audit` currently reports transitive findings (mostly dev/build tooling). They affect the build machine's tooling risk, not imported projects — ReverseLearn never installs or runs imported code. Review `npm audit` output, keep dependencies updated.
 - **Imported source at rest**: projects are stored unencrypted in the browser's IndexedDB profile. On shared machines, delete projects from Settings after use and treat the browser profile as you would the source folder itself.
+
+- **GitHub-link import:** requests go from the browser directly to `api.github.com`. An optional private-repo token is held only in component memory, sent only to `api.github.com`, cleared after import, and never written to IndexedDB/logs. Prefer fine-grained tokens scoped to one repo with Contents: Read-only, and revoke them after use if you do not need re-import.

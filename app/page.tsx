@@ -8,6 +8,7 @@ import { SAMPLE_FILES, SAMPLE_NAME } from '../lib/sample';
 import { generateExercises, generateLesson, learningPath } from '../lib/lessons';
 import { makeDiff, diffStats } from '../lib/diff';
 import { redactSecrets } from '../lib/security';
+import { parseGitHubUrl, fetchDefaultBranch, fetchRepoZipBlob, fetchRepoFilesViaTree } from '../lib/github';
 
 type View = 'dashboard' | 'import' | 'overview' | 'explorer' | 'trace' | 'path' | 'lesson' | 'change' | 'settings';
 const NAV: { id: View; label: string }[] = [
@@ -29,6 +30,7 @@ export default function Home() {
   const [busy, setBusy] = useState(''); const [error, setError] = useState('');
   const [importName, setImportName] = useState(''); const [importDesc, setImportDesc] = useState('');
   const [zipFile, setZipFile] = useState<File | null>(null);
+  const [githubUrl, setGithubUrl] = useState(''); const [githubToken, setGithubToken] = useState('');
   const [query, setQuery] = useState(''); const [catFilter, setCatFilter] = useState('all');
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [traceId, setTraceId] = useState(''); const [level, setLevel] = useState<Level>('beginner');
@@ -44,25 +46,55 @@ export default function Home() {
   async function save(p: Project) { setProjects((prev) => { const next = [p, ...prev.filter((x) => x.id !== p.id)]; return next; }); try { await store.put(p); } catch { /* surfaced on load */ } }
   function openProject(p: Project) { setCurrentId(p.id); setSelectedFile(p.analysis?.files[0]?.path || null); setView('overview'); }
 
+  async function handleFiles(files: { path: string; content: string }[], excludedCount: number, rejected: string[], sourceLabel: string, fallbackName: string, replaceId?: string) {
+    if (!files.length) throw new Error('No readable text source files found after exclusions.');
+    const a = analyzeProject(files, excludedCount);
+    if (rejected.length) a.warnings.push(`Rejected/skipped entries: ${rejected.slice(0, 8).join(', ')}`);
+    if (replaceId && current) {
+      const before: Record<string, string> = {}; current.files.forEach((f) => before[f.path] = hashContent(f.content));
+      const after: Record<string, string> = {}; files.forEach((f) => after[f.path] = hashContent(f.content));
+      const cmp = compareHashes(before, after); setCompare(cmp);
+      const updated = { ...current, files, analysis: a, source: sourceLabel, stale: cmp.modified.length + cmp.added.length + cmp.removed.length > 0 };
+      await save(updated); setView('overview');
+    } else {
+      const p: Project = { id: uid(), name: importName || fallbackName, description: importDesc, createdAt: new Date().toISOString(), source: sourceLabel, analysis: a, files, progress: {} };
+      await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setView('overview');
+    }
+  }
   async function importZip(replaceId?: string) {
     if (!zipFile) { setError('Choose a ZIP file first.'); return; }
     setBusy('Reading ZIP safely (no code is executed)…'); setError('');
+    try { const { files, excludedCount, rejected } = await readZip(zipFile); await handleFiles(files, excludedCount, rejected, 'ZIP upload', zipFile.name.replace(/\.zip$/i, ''), replaceId); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Import failed.'); }
+    setBusy('');
+  }
+  async function importGithub(replaceId?: string) {
+    const parsed = parseGitHubUrl(githubUrl);
+    if (!parsed) { setError('That does not look like a GitHub repo link. Example: https://github.com/yourname/your-app'); return; }
+    setError(''); const token = githubToken || undefined;
     try {
-      const { files, excludedCount, rejected } = await readZip(zipFile);
-      if (!files.length) throw new Error('No readable text source files found after exclusions.');
-      const a = analyzeProject(files, excludedCount);
-      if (rejected.length) a.warnings.push(`Rejected/skipped entries: ${rejected.slice(0, 8).join(', ')}`);
-      if (replaceId && current) {
-        const before: Record<string, string> = {}; current.files.forEach((f) => before[f.path] = hashContent(f.content));
-        const after: Record<string, string> = {}; files.forEach((f) => after[f.path] = hashContent(f.content));
-        const cmp = compareHashes(before, after); setCompare(cmp);
-        const updated = { ...current, files, analysis: a, stale: cmp.modified.length + cmp.added.length + cmp.removed.length > 0 };
-        await save(updated); setView('overview');
-      } else {
-        const p: Project = { id: uid(), name: importName || zipFile.name.replace(/\.zip$/i, ''), description: importDesc, createdAt: new Date().toISOString(), analysis: a, files, progress: {} };
-        await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setView('overview');
+      const branch = parsed.branch || await (async () => { setBusy(`Contacting GitHub for ${parsed.owner}/${parsed.repo}…`); return fetchDefaultBranch(parsed, token); })();
+      setBusy(`Downloading ${parsed.owner}/${parsed.repo} (${branch}) from GitHub…`);
+      let files: { path: string; content: string }[] = []; let excludedCount = 0; const rejected: string[] = [];
+      try {
+        const blob = await fetchRepoZipBlob(parsed, branch, token);
+        if (blob.size > 30 * 1024 * 1024) throw new Error('That repository ZIP is over 30 MB. Import a sub-folder link (…/tree/branch/folder), or download the ZIP and remove large folders first.');
+        const r = await readZip(new File([blob], 'repo.zip'));
+        excludedCount = r.excludedCount; rejected.push(...r.rejected); files = r.files;
+      } catch (zipErr) {
+        setBusy('ZIP download was blocked — fetching files individually instead…');
+        const r = await fetchRepoFilesViaTree(parsed, branch, token, (n) => setBusy(`Fetching files individually… ${n} files`));
+        files = r.files; excludedCount = r.excludedCount;
+        if (!files.length) throw zipErr;
       }
-    } catch (e) { setError(e instanceof Error ? e.message : 'Import failed.'); }
+      if (parsed.subpath) {
+        const prefix = parsed.subpath + '/'; const before = files.length;
+        files = files.filter((f) => f.path.startsWith(prefix)).map((f) => ({ ...f, path: f.path.slice(prefix.length) }));
+        excludedCount += before - files.length;
+      }
+      setGithubToken('');
+      await handleFiles(files, excludedCount, rejected, `GitHub: ${parsed.owner}/${parsed.repo}@${branch}`, parsed.repo, replaceId);
+    } catch (e) { setError(e instanceof Error ? e.message : 'GitHub import failed.'); }
     setBusy('');
   }
   async function loadSample() {
@@ -95,11 +127,11 @@ export default function Home() {
         {busy && <div className="card" aria-live="polite">⏳ {busy}</div>}
 
         {view === 'dashboard' && <>
-          <h1>Your learning projects</h1><p className="muted">Import an app built by Claude, ChatGPT, Cursor, Lovable, Bolt, Replit, v0 — any tool. If it exports source code or a ZIP, ReverseLearn can map it.</p>
+          <h1>Your learning projects</h1><p className="muted">Import an app built by Claude, ChatGPT, Cursor, Lovable, Bolt, Replit, v0 — any tool. Paste its GitHub link, or upload a ZIP, and ReverseLearn can map it.</p>
           <div className="kv"><button className="btn" onClick={() => setView('import')}>+ Import a project</button><button className="btn secondary" onClick={loadSample}>Load the labelled SAMPLE app</button></div>
           <div className="grid">{projects.map((p) => (
             <article className="card" key={p.id}><h3>{p.isSample ? '🏷️ ' : ''}{p.name}</h3>
-              <p className="muted">{p.description || 'No description.'}</p>
+              <p className="muted">{p.description || 'No description.'}</p>{p.source && <p className="muted">📦 Source: {p.source}</p>}
               <p>{(p.analysis?.frameworks || []).map((f) => <span className="pill" key={f}>{f}</span>)}</p>
               <p className="muted">{p.analysis ? `${p.analysis.files.length} files · analysed ${new Date(p.analysis.analyzedAt).toLocaleString()} · ${Object.values(p.progress).filter((x) => x.status === 'done').length} exercises done` : 'Not analysed yet'}</p>
               {p.stale && <p className="inferred">⚠️ Code changed on re-import — older explanations may be stale.</p>}
@@ -112,7 +144,18 @@ export default function Home() {
 
         {view === 'import' && <>
           <h1>Import a project</h1><p className="muted">ZIP only in this MVP. Limits: 30 MB ZIP, 2,000 files, 25 MB uncompressed text, 512 KB/file. Excluded by default: node_modules, .git, .next, dist, build, coverage, vendor, binaries. Suspicious paths (../), .env and secret-looking files are rejected/redacted — values are never shown. Nothing is executed.</p>
+          <div className="card" style={{ borderColor: 'var(--accent)' }}>
+            <h3 style={{ marginTop: 0 }}>⭐ From a GitHub link (recommended if your app is on GitHub)</h3>
+            <label htmlFor="ghurl">Paste your repository link</label>
+            <input id="ghurl" value={githubUrl} onChange={(e) => setGithubUrl(e.target.value)} placeholder="https://github.com/yourname/your-app" />
+            <p className="muted" style={{ marginTop: -6 }}>Also accepts a folder link like <code>…/tree/main/my-app</code> (monorepos), or just <code>yourname/your-app</code>. Public repos need nothing else.</p>
+            <label htmlFor="ghtok">Private repo? Paste a read-only token (optional)</label>
+            <input id="ghtok" type="password" autoComplete="off" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder="github_pat_… (used once, in memory only — never saved)" />
+            <p className="muted" style={{ marginTop: -6 }}>Create one at GitHub → Settings → Developer settings → Fine-grained tokens, with <b>Contents: Read-only</b> on that one repo. It is sent only to api.github.com, is cleared after import, and is never stored in your project or browser storage.</p>
+            <div className="kv"><button className="btn" onClick={() => importGithub()}>Import from GitHub →</button>{current && <button className="btn secondary" onClick={() => importGithub(current.id)}>Re-import current project from this link & compare</button>}</div>
+          </div>
           <div className="card">
+            <h3 style={{ marginTop: 0 }}>…or upload a ZIP</h3>
             <label htmlFor="pname">Project name</label><input id="pname" value={importName} onChange={(e) => setImportName(e.target.value)} placeholder="e.g. My invoice app" />
             <label htmlFor="pdesc">What was this app supposed to do? (optional)</label><input id="pdesc" value={importDesc} onChange={(e) => setImportDesc(e.target.value)} placeholder="e.g. Let clients pay invoices" />
             <label htmlFor="zip">Source ZIP</label><input id="zip" type="file" accept=".zip,application/zip" onChange={(e) => setZipFile(e.target.files?.[0] || null)} />
@@ -219,7 +262,7 @@ export default function Home() {
           <h1>Project settings</h1>
           <div className="card"><h3>Project</h3>
             <label htmlFor="rename">Name</label><input id="rename" defaultValue={current.name} onBlur={async (e) => { if (e.target.value.trim()) await save({ ...current, name: e.target.value.trim() }); }} />
-            <p className="muted">Source: ZIP import (local) · Analyzed: {analysis ? new Date(analysis.analyzedAt).toLocaleString() : 'never'} · Analyzer: {analysis?.version || '—'}</p>
+            <p className="muted">Source: {current.source || 'ZIP upload'} · Analyzed: {analysis ? new Date(analysis.analyzedAt).toLocaleString() : 'never'} · Analyzer: {analysis?.version || '—'}</p>
             <p className="muted">Privacy: analysis runs in your browser. Source is stored only in this browser’s IndexedDB. No AI provider is configured, so no code is sent anywhere. Secret-looking files are redacted in views.</p>
             <div className="kv"><button className="btn secondary" onClick={() => setView('import')}>Re-analyse / re-import</button>
               <button className="btn secondary" onClick={() => download(current.name.replace(/\W+/g, '-') + '-reverselearn-export.json', JSON.stringify({ name: current.name, analysis: current.analysis, progress: current.progress, changeProposals: current.changeProposals || [] }, null, 2), 'application/json')}>Export learning data (JSON)</button>

@@ -24,7 +24,7 @@ export type Analysis = {
   envVarNames: string[];
 };
 export type Project = {
-  id: string; name: string; description: string; createdAt: string;
+  id: string; name: string; description: string; createdAt: string; source?: string;
   isSample?: boolean; analysis: Analysis | null; files: InputFile[];
   progress: Record<string, { status: string; hints?: number; confidence?: number; answer?: string; updatedAt: string }>;
   changeProposals?: { id: string; request: string; file: string; diff: string; status: string; createdAt: string }[];

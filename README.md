@@ -24,7 +24,7 @@ npm run dev        # http://localhost:3000
 
 Then either:
 1. Click **Load the labelled SAMPLE app** (30 seconds, teaches you the tool), or
-2. **Import project** → upload a ZIP of a real app.
+2. **Import project** → paste the app's **GitHub repo link** (`https://github.com/you/your-app`, a `…/tree/branch/folder` link, or just `you/your-app`) — public repos need no token; private repos take an optional fine-grained **Contents: Read-only** token that is used once in memory and never saved — or upload a ZIP.
 
 Production check:
 
@@ -33,6 +33,13 @@ npm test           # 11 unit tests: zip safety, secret redaction, analyzer, diff
 npm run typecheck  # TypeScript
 npm run build      # production build
 ```
+
+## Import sources
+
+| Source | How |
+|---|---|
+| **GitHub link** | Paste the repo/folder URL on the Import screen. Fetched via the GitHub API in your browser (60 req/hr unauthenticated; token raises it). Re-importing the same link compares changes and marks stale lessons. |
+| ZIP upload | See the table below. |
 
 ## How to import your next AI-built app
 

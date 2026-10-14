@@ -37,3 +37,15 @@ code,pre{font-family:ui-monospace,Menlo,Consolas,monospace}pre{background:#0b0f1
 .svgwrap{background:#0b0f14;border:1px solid var(--line);border-radius:14px;overflow:auto;margin:12px 0}
 .svgtools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.svgtools button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-weight:700}
 svg text{fill:var(--text);font-family:system-ui,sans-serif}svg .mut{fill:var(--muted)}
+
+/* In-app live-site companion: a separate cross-origin frame and learning rail. */
+.browserlayout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(290px,.85fr);gap:14px;align-items:start}
+.browserpane,.learnpane{min-width:0}
+.browserbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.browserbar input{flex:1 1 260px;min-width:180px;margin:0}
+.browserframe{height:min(72vh,820px);min-height:460px;background:#0b0f14;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px 0}
+.browserframe iframe{display:block;width:100%;height:100%;border:0;background:#fff}
+.browserplaceholder{height:100%;min-height:460px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+.techcrumb{padding:10px 0;border-bottom:1px solid var(--line)}.techcrumb p{margin:5px 0}.techcrumb small{color:var(--muted);line-height:1.4;display:block}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:980px){.browserlayout{grid-template-columns:1fr}.browserframe{height:62vh;min-height:400px}}

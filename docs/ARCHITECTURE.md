@@ -11,18 +11,21 @@
 |---|---|
 | `lib/security.ts` | ZIP path normalization, exclusions, size limits, secret detection/redaction |
 | `lib/zip.ts` | Browser ZIP extraction under those limits |
+| `lib/live-browser.ts` | Live-app URL validation and origin-only persistence policy |
 | `lib/analyzer.ts` | Staged analysis: inventory → stack → routes → DB/auth/external/tests → nodes/edges → traces; `compareHashes` for stale detection |
 | `lib/lessons.ts` | Lessons (3 levels), progressive exercises, learning path — from analysis only |
 | `lib/diff.ts` | Line diff (LCS) + stats |
 | `lib/storage.ts` | IndexedDB (`reverselearn/projects`) |
 | `lib/sample.ts` + `fixtures/` | Labelled SAMPLE fixture, also the test fixture |
-| `app/page.tsx` | 9 screens, view state, progress tracking |
+| `app/page.tsx` | 10 screens, view state, progress tracking, optional live-app iframe |
 
 ## Data model (MVP subset of spec §5)
-`Project { id, name, description, files: InputFile[], analysis: Analysis, progress, changeProposals, stale }` persisted per-project in IndexedDB. `Analysis` embeds the spec's `Finding/EvidenceRef/ArchitectureNode/Edge/FeatureTrace` types (`lib/types.ts`). Analysis version (`ANALYZER_VERSION`) is stored so stale findings can be detected on re-import.
+`Project { id, name, description, files: InputFile[], analysis: Analysis, progress, changeProposals, stale, liveUrl? }` persisted per-project in IndexedDB; `liveUrl` stores only the target origin. `Analysis` embeds the spec's `Finding/EvidenceRef/ArchitectureNode/Edge/FeatureTrace` types (`lib/types.ts`). Analysis version (`ANALYZER_VERSION`) is stored so stale findings can be detected on re-import.
 
 ## Extension points (Phase 2/3, interfaces already allow them)
 Git import (produce the same `InputFile[]`), server AI adapter behind `AI_PROVIDER` env, Postgres sync of the same `Project` shape, more language analyzers as additional stages in `analyzer.ts`.
 
 ## Dev View & live-app companion mode
-ReverseLearn does not embed or proxy the user's deployed app and never collects its credentials: framing is commonly blocked (X-Frame-Options/CSP) and logins must remain on the app's own origin. Instead, Overview offers a companion mode: the user opens the deployed app in a new tab (logging in there), while ReverseLearn's route list maps each live screen to its route file, feature trace, and a "Learn the tech" lesson. The in-app Dev View tutor bar provides contextual tidbits per screen from the current project's actual detected tech.
+Overview offers an optional Live App Browser: it loads the explicitly supplied HTTPS app URL in a cross-origin sandboxed iframe beside a route/learning panel. A separate-tab fallback is provided. No app proxy or source fetch is used. ReverseLearn cannot inspect the framed document or infer which route the user reached; the learner manually selects a route, which maps to the imported route file, detected technologies, feature trace, and lesson. The Dev View tutor bar provides contextual notes based on the current project's actual detected tech.
+
+The URL policy (`lib/live-browser.ts`) accepts only HTTP(S), rejects URL userinfo and ReverseLearn's own origin, requires HTTPS for deployed sites, and allows HTTP only for localhost-to-localhost development. Only the target origin is persisted; route, query, and fragment stay in component memory. The frame uses `referrerPolicy=no-referrer` and a sandbox that allows scripts/forms and popup-based auth but denies top-level navigation. The remote deployed app's code executes inside the browser frame as a website only after the user explicitly opens its URL; imported repository files are still never executed by the analyzer. The parent app cannot read cross-origin page content, credentials, cookies, or session. The target host may reject framing (CSP `frame-ancestors` / X-Frame-Options), and browser third-party cookie rules or an auth provider may prevent embedded sign-in. ReverseLearn does not bypass either; use the separate-tab fallback.

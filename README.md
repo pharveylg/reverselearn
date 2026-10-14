@@ -10,10 +10,7 @@ Import a project built by Claude, ChatGPT, Cursor, Lovable, Bolt, Replit, v0, or
 
 **Live app: https://pharveylg.github.io/reverselearn/**
 
-Every push to `main` runs the tests and redeploys this automatically
-(`.github/workflows/deploy-pages.yml`). It is the same local-first app —
-analysis still happens only in the visitor's browser; GitHub Pages just
-serves the static files, and projects are stored in that browser only.
+GitHub Pages serves a static export from the `gh-pages` branch. Publishing is currently a manual step (the auto-deploy workflow needs to be added through GitHub's web UI with workflow permission); Pages does not run the app server. Analysis still happens only in the visitor's browser, and projects are stored in that browser only.
 
 ## Quick start
 
@@ -29,7 +26,7 @@ Then either:
 Production check:
 
 ```bash
-npm test           # 11 unit tests: zip safety, secret redaction, analyzer, diff
+npm test           # 28 unit tests: ZIP safety, secret redaction, analysis, browser URL policy, diff
 npm run typecheck  # TypeScript
 npm run build      # production build
 ```
@@ -59,6 +56,12 @@ Most AI-built apps ship a diagram (README, `docs/architecture.md`, Mermaid/Plant
 
 In **Learning Path** and **Lesson Workspace** (and from Feature Trace / the code explorer), pick a feature or a named function and get its full technology breakdown, layer by layer — React components/state, events and controlled forms, fetch/HTTP and JSON, async/await, API route handlers, validation and status codes, Prisma/ORM and SQL, auth/sessions, env config, TypeScript and tests. For each one: a plain-language explanation at your chosen level, how it works under the hood, how *this* feature/function uses it (with file:line evidence), what to learn next, and a self-check question. Technologies not detected are stated as missing/unverified (e.g. "no auth found") instead of being invented.
 
+### Use your app inside ReverseLearn
+
+From **Project Overview**, enter your deployed app's HTTPS URL and choose **Open inside ReverseLearn**. The Live App Browser shows the site beside a learning panel: select the route you're on (manually, because browser same-origin rules prevent ReverseLearn from reading the app's page or URL) to see its source file, detected tech and **Learn more** / **Trace feature** actions. The address field won't track links clicked inside the frame; paste a URL or pick a route to map the page. You can also choose **Open in a separate tab**.
+
+This is an optional, cross-origin sandboxed frame — not a full Chrome replacement. The deployed site runs in your browser as a website, but ReverseLearn cannot read its contents, credentials, cookies, or session. Only the app's origin is persisted; the current path/query stays in memory. Some hosts prohibit framing or some sign-in flows block third-party cookies; use the separate-tab fallback in that case. Never paste passwords or one-time tokens into ReverseLearn, and only load deployed apps you trust. Imported source files are still never executed by the analyzer.
+
 ## The learning loop
 
 Import → architecture map → pick a feature → trace its flow (UI → transport → backend → data → tests) → lesson at Beginner/Intermediate/Advanced → exercises (identify → predict → trace → find missing validation → tiny change → test plan → explain it back) → **Change Lab**: describe a change, review the exact diff, tick approval, export a `.patch` (nothing is written before approval; ReverseLearn only ever edits its own copy — rollback is re-importing your original ZIP).
@@ -73,8 +76,8 @@ ZIP (untrusted) ─▶ lib/security.ts   path-traversal/bomb guards, exclusions,
                 ─▶ lib/lessons.ts    lessons / exercises / learning path from analysis only
                 ─▶ lib/diff.ts       Change Lab diff (LCS), requires explicit approval
                 ─▶ lib/storage.ts    IndexedDB persistence (on-device only)
-UI: app/page.tsx — Dashboard, Import, Overview, Explorer, Trace, Learning Path,
-    Lesson Workspace, Change Lab, Settings (Next.js App Router, all client-side)
+UI: app/page.tsx — Dashboard, Import, Overview, Live App Browser, Explorer, Trace,
+    Learning Path, Lesson Workspace, Change Lab, Settings (all client-side)
 ```
 
 Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Security: [`docs/SECURITY.md`](docs/SECURITY.md)
@@ -83,9 +86,9 @@ Full detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · Security: [`docs/
 
 ## Current limitations (honest)
 
-- ZIP import only (Git URL import = Phase 2). Re-import comparison and stale-marking are included.
+- Imports support ZIP and GitHub repository/folder links. Re-import comparison and stale-marking are included.
 - Deep analysis targets JavaScript/TypeScript, React/Next.js, Node APIs, Prisma/SQL patterns. Other languages get inventory + honest warnings.
-- Static analysis cannot prove runtime behaviour, auth correctness, or coverage %. ReverseLearn never executes imported code.
+- Static analysis cannot prove runtime behaviour, auth correctness, or coverage %. The analyzer never executes imported code; the optional Live App Browser loads a deployed site separately in an isolated frame.
 - Lessons without an AI key are template-based from evidence excerpts; follow-up free-form Q&A is file/lesson navigation, not a chat model.
 - Data lives in one browser. Export learning data (JSON) from Project Settings to move it.
 

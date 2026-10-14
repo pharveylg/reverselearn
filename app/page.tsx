@@ -11,12 +11,13 @@ import { redactSecrets } from '../lib/security';
 import { parseGitHubUrl, fetchDefaultBranch, fetchRepoZipBlob, fetchRepoFilesViaTree } from '../lib/github';
 import { techBehindFeature, functionTech, detectTechInFiles } from '../lib/tech';
 import { buildSequence } from '../lib/sequence';
+import { normalizeLiveAppUrl, persistedLiveAppOrigin } from '../lib/live-browser';
 import { useRef } from 'react';
 
-type View = 'dashboard' | 'import' | 'overview' | 'explorer' | 'trace' | 'path' | 'lesson' | 'change' | 'settings';
+type View = 'dashboard' | 'import' | 'overview' | 'browser' | 'explorer' | 'trace' | 'path' | 'lesson' | 'change' | 'settings';
 const NAV: { id: View; label: string }[] = [
   { id: 'dashboard', label: '🏠 Dashboard' }, { id: 'import', label: '📥 Import project' },
-  { id: 'overview', label: '🗺️ Project overview' }, { id: 'explorer', label: '🔎 Codebase explorer' },
+  { id: 'overview', label: '🗺️ Project overview' }, { id: 'browser', label: '🧭 Live app browser' }, { id: 'explorer', label: '🔎 Codebase explorer' },
   { id: 'trace', label: '🧵 Feature trace' }, { id: 'path', label: '🎯 Learning path' },
   { id: 'lesson', label: '📚 Lesson workspace' }, { id: 'change', label: '🧪 Change Lab' },
   { id: 'settings', label: '⚙️ Project settings' },
@@ -28,7 +29,6 @@ function conf(c: string) { return <span className={`pill ${c}`}>{c}</span>; }
 function download(name: string, text: string, type = 'text/plain') {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click(); URL.revokeObjectURL(a.href);
 }
-
 
 function ArchDiagram({ analysis, onOpen, onSelect, selectedId }: { analysis: Analysis; onOpen: (p: string) => void; onSelect?: (n: Analysis['nodes'][0]) => void; selectedId?: string }) {
   const [scale, setScale] = useState(1); const [off, setOff] = useState({ x: 0, y: 0 });
@@ -42,7 +42,7 @@ function ArchDiagram({ analysis, onOpen, onSelect, selectedId }: { analysis: Ana
   const center = (id: string) => { const p = pos.get(id); return p ? { x: p.x + 96, y: p.y + 42 } : { x: 0, y: 0 }; };
   const wrap = (txt: string, max = 22) => { const words = txt.split(' '); const lines: string[] = []; let cur = ''; for (const w of words) { if ((cur + ' ' + w).trim().length > max) { lines.push(cur.trim()); cur = w; } else cur += ' ' + w; } if (cur.trim()) lines.push(cur.trim()); return lines.slice(0, 2); };
   return (<div>
-    <div className="svgtools"><button onClick={() => setScale(Math.min(2, scale + 0.15))}>＋ Zoom in</button><button onClick={() => setScale(Math.max(0.4, scale - 0.15))}>－ Zoom out</button><button onClick={() => { setScale(1); setOff({ x: 0, y: 0 }); }}>↺ Reset view</button><span className="muted" style={{ alignSelf: 'center' }}>Drag to pan · scroll inside the box · click a box to open its file ({Math.round(scale * 100)}%)</span></div>
+    <div className="svgtools"><button onClick={() => setScale(Math.min(2, scale + 0.15))}>＋ Zoom in</button><button onClick={() => setScale(Math.max(0.4, scale - 0.15))}>－ Zoom out</button><button onClick={() => { setScale(1); setOff({ x: 0, y: 0 }); }}>↺ Reset view</button><span className="muted" style={{ alignSelf: 'center' }}>Drag to pan · scroll inside the box · click a box to inspect it ({Math.round(scale * 100)}%)</span></div>
     <div className="svgwrap" style={{ maxHeight: 460, cursor: 'grab' }}
       onPointerDown={(e) => { drag.current = { x: e.clientX, y: e.clientY, ox: off.x, oy: off.y }; }}
       onPointerMove={(e) => { if (drag.current) setOff({ x: drag.current.ox + (e.clientX - drag.current.x), y: drag.current.oy + (e.clientY - drag.current.y) }); }}
@@ -96,15 +96,36 @@ export default function Home() {
   const [tipIdx, setTipIdx] = useState(0);
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const [liveUrl, setLiveUrl] = useState('');
+  const [browserSrc, setBrowserSrc] = useState('');
+  const [browserError, setBrowserError] = useState('');
+  const [selectedBrowserRoute, setSelectedBrowserRoute] = useState('');
   const [changeReq, setChangeReq] = useState(''); const [changeFile, setChangeFile] = useState('');
   const [edited, setEdited] = useState(''); const [diff, setDiff] = useState(''); const [approved, setApproved] = useState(false);
   const [compare, setCompare] = useState<{ added: string[]; removed: string[]; modified: string[] } | null>(null);
 
   const current = projects.find((p) => p.id === currentId) || null;
   const analysis: Analysis | null = current?.analysis || null;
-  useEffect(() => { store.all().then((ps) => { setProjects(ps.sort((a, b) => b.createdAt.localeCompare(a.createdAt))); if (ps[0]) setCurrentId(ps[0].id); }).catch(() => setError('Local storage (IndexedDB) unavailable. Projects will not persist in this browser context.')); }, []);
+  useEffect(() => { store.all().then((ps) => { setProjects(ps.sort((a, b) => b.createdAt.localeCompare(a.createdAt))); if (ps[0]) { setCurrentId(ps[0].id); setLiveUrl(ps[0].liveUrl || ''); setBrowserSrc(ps[0].liveUrl || ''); } }).catch(() => setError('Local storage (IndexedDB) unavailable. Projects will not persist in this browser context.')); }, []);
   async function save(p: Project) { setProjects((prev) => { const next = [p, ...prev.filter((x) => x.id !== p.id)]; return next; }); try { await store.put(p); } catch { /* surfaced on load */ } }
-  function openProject(p: Project) { setCurrentId(p.id); setSelectedFile(p.analysis?.files[0]?.path || null); setView('overview'); }
+  function openProject(p: Project) { setCurrentId(p.id); setSelectedFile(p.analysis?.files[0]?.path || null); setLiveUrl(p.liveUrl || ''); setBrowserSrc(p.liveUrl || ''); setBrowserError(''); setSelectedBrowserRoute(''); setView('overview'); }
+  async function openLiveApp(mode: 'embedded' | 'tab' = 'embedded') {
+    try {
+      const url = normalizeLiveAppUrl(liveUrl || current?.liveUrl || '', window.location.origin, window.location.hostname);
+      // Open synchronously within the click gesture so popup blockers don't eat the fallback.
+      if (mode === 'tab') window.open(url, '_blank', 'noopener,noreferrer');
+      setBrowserError(''); setLiveUrl(url); setBrowserSrc(url);
+      if (mode === 'embedded') setView('browser');
+      if (current) await save({ ...current, liveUrl: persistedLiveAppOrigin(url) });
+    } catch (e) { setBrowserError(e instanceof Error ? e.message : 'That URL could not be opened.'); }
+  }
+  function loadDiscoveredRoute(path: string) {
+    try {
+      const base = browserSrc || current?.liveUrl || liveUrl;
+      const url = normalizeLiveAppUrl(base, window.location.origin, window.location.hostname);
+      const dest = new URL(url); dest.pathname = path.startsWith('/') ? path : `/${path}`; dest.search = ''; dest.hash = '';
+      const next = dest.toString(); setLiveUrl(next); setBrowserSrc(next); setBrowserError('');
+    } catch (e) { setBrowserError(e instanceof Error ? e.message : 'Could not navigate to that route.'); }
+  }
 
   async function handleFiles(files: { path: string; content: string }[], excludedCount: number, rejected: string[], sourceLabel: string, fallbackName: string, replaceId?: string) {
     if (!files.length) throw new Error('No readable text source files found after exclusions.');
@@ -118,7 +139,7 @@ export default function Home() {
       await save(updated); setView('overview');
     } else {
       const p: Project = { id: uid(), name: importName || fallbackName, description: importDesc, createdAt: new Date().toISOString(), source: sourceLabel, analysis: a, files, progress: {} };
-      await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setView('overview');
+      await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setLiveUrl(''); setBrowserSrc(''); setSelectedBrowserRoute(''); setView('overview');
     }
   }
   async function importZip(replaceId?: string) {
@@ -160,7 +181,7 @@ export default function Home() {
   async function loadSample() {
     const a = analyzeProject(SAMPLE_FILES, 0);
     const p: Project = { id: uid(), name: SAMPLE_NAME, description: 'Bundled demo data — clearly a sample, not your project. Use it to learn the tool, then import your own ZIP.', createdAt: new Date().toISOString(), isSample: true, analysis: a, files: SAMPLE_FILES, progress: {} };
-    await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setView('overview');
+    await save(p); setCurrentId(p.id); setSelectedFile(a.files[0]?.path || null); setLiveUrl(''); setBrowserSrc(''); setSelectedBrowserRoute(''); setView('overview');
   }
   async function markProgress(key: string, status: string, extra: Record<string, unknown> = {}) {
     if (!current) return; const updated = { ...current, progress: { ...current.progress, [key]: { ...(current.progress[key] || {}), status, ...extra, updatedAt: new Date().toISOString() } } }; await save(updated);
@@ -197,6 +218,7 @@ export default function Home() {
             overview: ['Click any box in the architecture diagram: a panel below explains the tech behind it, with a Learn more button.', 'Green border = observed in code. Red = unverified — treat it as a question, not a fact.'],
             explorer: [fileTechs[0] ? `This file uses ${fileTechs[0].name}: ${fileTechs[0].plain}` : 'Follow the imports at the top of a file — that is the wiring diagram of the app.', 'Line numbers in findings are clickable evidence, not decoration.'],
             trace: ['In the sequence diagram, blue is a request, green dashed is the reply, red ❓ means "not found in code".', 'Click a numbered message to open the exact file that performs it.'],
+            browser: ['The embedded app is cross-origin: ReverseLearn cannot read its page, route, cookies, or password. Choose your route manually.', 'If the app refuses to frame or sign-in fails, open it in a separate tab; that is a site/browser policy, not an analyzer result.'],
             path: ['Red "!" stops are diagram boxes missing from code — verifying a gap is real learning.', 'Progress here is self-assessed. The explain-it-back exercise is the real test.'],
             lesson: ['Use "Explain differently / go deeper" after reading, not before — predicting first makes it stick.', fileTechs[0] ? `Tech in the selected file: ${fileTechs.map((t) => t.name).slice(0, 3).join(', ')}.` : 'Pick a function in this file to see its inputs → outputs anatomy.'],
             change: ['One tiny change, reviewed as a diff, beats three changes made on faith.', 'Nothing here writes anywhere until you tick the approval box.'],
@@ -256,7 +278,7 @@ export default function Home() {
             <div className="card"><h3>⚠️ Caveats (honest limits)</h3>{analysis.warnings.length ? analysis.warnings.map((w, i) => <p className="muted" key={i}>• {w}</p>) : <p className="muted">No warnings. Still: static analysis cannot prove runtime behaviour.</p>}<p className="muted">Observed = directly in source · Inferred = likely, check it · Unverified = needs running the app.</p></div>
           </div>
           <h2>Architecture map <span className="muted">(generated from findings — text fallback is the same data)</span></h2>
-          <div className="card"><h3 style={{ marginTop: 0 }}>Architecture diagram <span className="muted">(pan / zoom — text version below)</span></h3><ArchDiagram analysis={analysis} selectedId={selectedNodeId} onSelect={(n) => setSelectedNodeId(n.id)} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} /><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => setSelectedNodeId(n.id)}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
+          <div className="card"><h3 style={{ marginTop: 0 }}>Architecture diagram <span className="muted">(pan / zoom — click a box to learn — text version below)</span></h3><ArchDiagram analysis={analysis} selectedId={selectedNodeId} onSelect={(n) => setSelectedNodeId(n.id)} onOpen={(p) => { setSelectedFile(p); setView('explorer'); }} /><div className="map">{analysis.nodes.map((n, i) => <span key={n.id} style={{ display: 'contents' }}>{i > 0 && <span className="arrow">──▶</span>}<button className="node" onClick={() => setSelectedNodeId(n.id)}><b>{n.label}</b><br /><span className="muted">{n.detail}</span><br />{conf(n.confidence)}</button></span>)}</div>
             {analysis.edges.map((e, i) => <p className="muted" key={i}>{e.from} → {e.to}: {e.label} {conf(e.confidence)}</p>)}
           </div>
           {analysis.archAlignment ? <>
@@ -282,11 +304,12 @@ export default function Home() {
               <div className="kv" style={{ marginTop: 10 }}><button className="btn" onClick={learn}>Learn more about this tech →</button><button className="btn secondary" onClick={() => { const p = node.evidence[0]?.path; if (p) { setSelectedFile(p); setView('explorer'); } }}>Open the code</button><button className="btn secondary" onClick={() => setView('trace')}>See it in a feature trace</button></div>
             </div>; })()}
           <div className="card">
-            <h3 style={{ marginTop: 0 }}>▶️ Explore your live app with Dev View (companion mode)</h3>
-            <p className="muted">Keep ReverseLearn open in this tab, open your deployed app in a new tab, and click through it there. As you use each screen, find it below: ReverseLearn shows the route, the file behind it, and the tech to learn. <b>Log in only on your app's own page — never type your password or tokens into ReverseLearn.</b> (Embedding your app inside ReverseLearn is deliberately not done: many apps block framing, and your login must stay on its own site.)</p>
-            <label htmlFor="liveurl">Your deployed app URL</label>
+            <h3 style={{ marginTop: 0 }}>▶️ Use your live app with Dev View</h3>
+            <p className="muted">Open a <b>cross-origin in-app browser</b> beside the learning panel, or open the site separately if its hosting/login policy blocks framing. Choose your current route manually to see its code and tech; ReverseLearn cannot inspect the live page. Never type passwords, one-time links, or tokens in ReverseLearn.</p>
+            <label htmlFor="liveurl">Your deployed app URL (HTTPS)</label>
             <input id="liveurl" value={liveUrl || current.liveUrl || ''} onChange={(e) => setLiveUrl(e.target.value)} placeholder="https://your-app.vercel.app" />
-            <div className="kv"><button className="btn" onClick={async () => { const raw = (liveUrl || current.liveUrl || '').trim(); if (!raw) { setError('Paste your deployed app URL first.'); return; } const url = /^https?:\/\//.test(raw) ? raw : 'https://' + raw; await save({ ...current, liveUrl: url }); window.open(url, '_blank', 'noopener,noreferrer'); }}>Open live app in a new tab ↗</button></div>
+            {browserError && <p role="alert" className="muted" style={{ color: 'var(--bad)' }}>{browserError}</p>}
+            <div className="kv"><button className="btn" onClick={() => void openLiveApp('embedded')}>Open inside ReverseLearn →</button><button className="btn secondary" onClick={() => void openLiveApp('tab')}>Open in a separate tab ↗</button></div>
             <h3>While you click around your live app, match the screen here:</h3>
             {analysis.routes.slice(0, 10).map((r) => <div key={r.path + r.file} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--line)', padding: '7px 0' }}><code style={{ minWidth: 150 }}>{r.path}</code><span className="muted" style={{ flex: '1 1 220px' }}>{r.kind} · {r.file}</span><button className="btn secondary" onClick={() => { setSelectedFile(r.file); const t = analysis.traces.find((x) => x.name.endsWith(r.path)); if (t) setTraceId(t.id); setView('lesson'); }}>Learn the tech</button><button className="btn secondary" onClick={() => { setSelectedFile(r.file); setView('trace'); }}>Trace it</button></div>)}
             {!analysis.routes.length && <p className="muted">No routes were discovered in this import, so screens cannot be matched yet.</p>}
@@ -294,6 +317,50 @@ export default function Home() {
           <h2>Findings with evidence</h2>
           {analysis.findings.slice(0, 14).map((f) => <div className="card" key={f.id}><b>{f.title}</b> {conf(f.confidence)}<p className="muted">{f.summary}</p>{f.evidence.map((e, i) => <button key={i} className="filebtn" onClick={() => { setSelectedFile(e.path); setView('explorer'); }}>📄 {e.path}{e.startLine ? ` : line ${e.startLine}` : ''}</button>)}{f.limitations?.map((l, i) => <p className="muted" key={i}>Limit: {l}</p>)}</div>)}
           <h2>Suggested learning sequence</h2><div className="card">{learningPath(analysis).map((s, i) => <p key={i}><b>{i + 1}. {s.title}</b> <span className="muted">(~{s.minutes} min) — {s.why}</span></p>)}</div>
+        </>}
+
+        {current && analysis && view === 'browser' && <>
+          <h1>🧭 Live app browser</h1>
+          <p className="muted">Use your deployed app here, with ReverseLearn’s route and learning notes beside it. ReverseLearn cannot inspect the embedded page, so select the route you are exploring manually. After links navigate inside the frame, the URL field may still show the last address you entered; that is a browser privacy boundary.</p>
+          <div className="browserlayout">
+            <section className="card browserpane">
+              <form className="browserbar" onSubmit={(e) => { e.preventDefault(); void openLiveApp('embedded'); }}>
+                <label htmlFor="browserurl" className="sr-only">App URL</label>
+                <input id="browserurl" aria-label="App URL" value={liveUrl || current.liveUrl || ''} onChange={(e) => setLiveUrl(e.target.value)} placeholder="https://your-app.vercel.app" />
+                <button className="btn" type="submit">Go</button>
+                <button className="btn secondary" type="button" onClick={() => void openLiveApp('tab')}>Open separately ↗</button>
+              </form>
+              {browserError && <div className="card" role="alert" style={{ borderColor: 'var(--bad)' }}>{browserError}</div>}
+              <div className="browserframe">
+                {browserSrc ? <iframe key={browserSrc} src={browserSrc} title={`Live app: ${current.name}`} referrerPolicy="no-referrer" loading="lazy" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" />
+                  : <div className="browserplaceholder"><span style={{ fontSize: 44 }}>🌐</span><h2>Open your deployed app here</h2><p className="muted">Paste its HTTPS URL above and press Go.</p></div>}
+              </div>
+              <p className="muted"><b>Frame limitations:</b> some apps send headers that prohibit embedding, and some login providers block sign-in inside frames or block third-party cookies. If blank or sign-in loops, choose <b>Open separately ↗</b>. ReverseLearn cannot detect or bypass those policies. Links inside the frame can navigate normally, but their new URL is not visible to ReverseLearn; choose the matching route at right or paste a URL manually.</p>
+              <p className="muted"><b>Privacy &amp; safety:</b> only open an app you trust. The deployed site runs as a normal website inside a cross-origin, sandboxed frame; ReverseLearn cannot read its page, credentials, cookies, or session. Don't paste passwords, one-time login links, or tokens here. Only the app’s origin is saved in this project; the current path stays in memory for this tab. This does not execute files imported for analysis.</p>
+            </section>
+            <aside className="card learnpane">
+              <h2 style={{ marginTop: 0 }}>🎓 Learn while you explore</h2>
+              <label htmlFor="browser-route">I’m exploring this route (choose manually)</label>
+              <select id="browser-route" value={selectedBrowserRoute} onChange={(e) => setSelectedBrowserRoute(e.target.value)}>
+                <option value="">Choose a discovered route…</option>
+                {analysis.routes.map((r) => <option key={r.path + '::' + r.file} value={r.path + '::' + r.file}>{r.path} · {r.kind} · {r.file}</option>)}
+              </select>
+              {(() => {
+                const route = analysis.routes.find((r) => `${r.path}::${r.file}` === selectedBrowserRoute);
+                const routeTech = route ? detectTechInFiles(current.files.filter((f) => f.path === route.file), level) : [];
+                return route ? <>
+                  <div className="card"><h3 style={{ marginTop: 0 }}>{route.path}</h3><p className="muted">{route.kind} route · {route.file}{route.line ? ` : line ${route.line}` : ''}</p>
+                    {routeTech.length ? routeTech.slice(0, 5).map((t) => <div key={t.id} className="techcrumb"><b>{LAYER_ICON[t.layer] || '🔹'} {t.name}</b><p className="muted">{t.plain}</p><small>{t.inThisCode}</small></div>) : <p className="muted">No technology pattern was confidently detected in this route file. Use the code and trace links to investigate.</p>}
+                    <div className="kv"><button className="btn secondary" onClick={() => { setSelectedFile(route.file); setView('explorer'); }}>Open code</button><button className="btn" onClick={() => { setSelectedFile(route.file); const t = analysis.traces.find((x) => x.steps.some((st) => st.evidence.some((ev) => ev.path === route.file))); if (t) setTraceId(t.id); setView('lesson'); }}>Learn more</button><button className="btn secondary" onClick={() => { setSelectedFile(route.file); const t = analysis.traces.find((x) => x.steps.some((st) => st.evidence.some((ev) => ev.path === route.file))); if (t) setTraceId(t.id); setView('trace'); }}>Trace feature</button></div>
+                    {route.kind === 'page' && !route.path.includes('[') && <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => loadDiscoveredRoute(route.path)}>Open this route in the frame</button>}
+                  </div>
+                </> : <div className="card"><p className="muted">Select the screen/API route you’re looking at. Page contents and the current browser URL are not read by ReverseLearn.</p>
+                  {!analysis.routes.length && <p className="muted">No routes were discovered in this project import.</p>}
+                </div>;
+              })()}
+              {analysis.nodes.length > 0 && <><h3>Or learn from the architecture</h3><select aria-label="Architecture component" value={selectedNodeId} onChange={(e) => setSelectedNodeId(e.target.value)}><option value="">Choose a component…</option>{analysis.nodes.map((n) => <option key={n.id} value={n.id}>{n.label} · {n.confidence}</option>)}</select>{(() => { const n = analysis.nodes.find((x) => x.id === selectedNodeId); if (!n) return null; const ts = detectTechInFiles(current.files.filter((f) => n.evidence.some((e) => e.path === f.path)), level); return <div className="card"><b>{n.label}</b> {conf(n.confidence)}<p className="muted">{n.detail}</p>{ts.slice(0, 4).map((t) => <p className="muted" key={t.id}><b>{t.name}:</b> {t.plain}</p>)}<button className="btn" onClick={() => { setSelectedFile(n.evidence[0]?.path || null); setView('lesson'); }}>Learn more</button></div>; })()}</>}
+            </aside>
+          </div>
         </>}
 
         {current && analysis && view === 'explorer' && <>
